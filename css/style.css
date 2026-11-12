@@ -1,0 +1,150 @@
+:root {
+  --red: #d62828;
+  --orange: #f77f00;
+  --yellow: #fcbf49;
+  --cream: #fff8ec;
+  --dark: #2b2118;
+  --gray: #8a7f74;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Sarabun", "Noto Sans Thai", sans-serif;
+  background: var(--cream);
+  color: var(--dark);
+  min-height: 100vh;
+  padding-bottom: 110px;
+}
+header {
+  background: var(--red);
+  color: #fff;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+header h1 { font-size: 20px; }
+header a { color: #fff; text-decoration: none; font-size: 22px; }
+.container { max-width: 480px; margin: 0 auto; padding: 16px; }
+.btn {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: bold;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  margin-top: 12px;
+  font-family: inherit;
+}
+.btn-primary { background: var(--red); color: #fff; }
+.btn-secondary { background: #fff; color: var(--red); border: 2px solid var(--red); }
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+  margin-bottom: 14px;
+}
+.bottom-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  background: #fff;
+  padding: 12px 16px;
+  box-shadow: 0 -3px 12px rgba(0,0,0,.12);
+  z-index: 60;
+}
+.bottom-bar .row {
+  max-width: 480px;
+  margin: 0 auto 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 18px;
+  font-weight: bold;
+}
+.bottom-bar .btn { margin-top: 0; max-width: 480px; margin-left: auto; margin-right: auto; }
+
+/* หน้าแรก */
+.hero { text-align: center; padding: 30px 10px 10px; }
+.logo { font-size: 72px; }
+.hero h2 { font-size: 30px; color: var(--red); margin-top: 6px; }
+.hero p { color: var(--gray); margin-top: 6px; }
+.hero-pizza { font-size: 110px; margin: 20px 0; animation: spin 14s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.table-badge {
+  display: inline-block;
+  background: var(--yellow);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+/* ตัวเลือกขนาด */
+.size-row { display: flex; gap: 10px; }
+.size-btn {
+  flex: 1;
+  padding: 12px 4px;
+  border-radius: 12px;
+  border: 2px solid #e5d9c8;
+  background: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  font-family: inherit;
+  cursor: pointer;
+}
+.size-btn small { display: block; font-weight: normal; color: var(--gray); font-size: 12px; }
+.size-btn.active { border-color: var(--red); background: #ffecec; color: var(--red); }
+
+/* พิซซ่า */
+.pizza-stage { display: flex; justify-content: center; padding: 20px 0; }
+.pizza {
+  position: relative;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #f9c74f 0 62%, #e9a23b 63% 100%);
+  border: 10px solid #d9903a;
+  box-shadow: 0 8px 20px rgba(0,0,0,.25), inset 0 0 25px rgba(214,40,40,.25);
+  transition: transform .35s ease;
+  overflow: hidden;
+}
+.pizza.size-S { transform: scale(0.75); }
+.pizza.size-M { transform: scale(0.88); }
+.pizza.size-L { transform: scale(1); }
+.topping-item {
+  position: absolute;
+  font-size: 28px;
+  line-height: 1;
+  animation: drop .55s cubic-bezier(.3,1.4,.5,1) both;
+}
+@keyframes drop {
+  0% { transform: translateY(-260px) rotate(-90deg) scale(1.4); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: translateY(0) rotate(var(--rot)) scale(1); opacity: 1; }
+}
+
+/* ท็อปปิ้ง */
+.topping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.topping-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 2px solid #e5d9c8;
+  background: #fff;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.topping-btn .emoji { font-size: 26px; }
+.topping-btn small { display: block; color: var(--gray); }
+.topping-btn.active { border-color: var(--red); background: #ffecec; }
+h3.section { margin: 18px 0 10px; font-size: 18px; }

@@ -3,11 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>เมนูพิซซ่า</title>
+  <title>เมนู</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .toast { width: max-content; max-width: 90vw; text-align: center; }
     .mi {
       display: flex; gap: 12px; align-items: center; padding: 14px;
       margin-bottom: 14px; border-radius: 22px; border: 1px solid var(--line);
@@ -25,28 +24,37 @@
     }
     .msz button.on { background: #fff; color: #1a120c; }
     .mrow { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 8px; }
-    .mprice { font-size: 20px; font-weight: 700; color: var(--gold); }
+    .mprice { font-size: 20px; font-weight: 700; color: var(--gold); white-space: nowrap; }
     .madd {
-      padding: 9px 14px; border: 0; border-radius: 999px; color: #fff; cursor: pointer;
+      padding: 9px 16px; border: 0; border-radius: 999px; color: #fff; cursor: pointer;
       background: linear-gradient(135deg, #f26a21, #ff9a45); font: 600 13px "Prompt";
       box-shadow: 0 6px 14px rgba(242,106,33,.4);
     }
     .madd:active { transform: scale(.95); }
+    .dr .mbody { display: flex; flex-direction: column; gap: 4px; }
   </style>
 </head>
 <body>
   <div class="screen">
     <div class="sticky">
-      <div class="top" style="padding:10px 0 12px">
+      <div class="top" style="padding:10px 0 8px">
         <a class="round" href="index.html">‹</a>
-        <h2>เมนูพิซซ่า</h2>
-        <a class="round" href="cart.html">🛒<i id="cartN">0</i></a>
+        <h2 style="text-align:center">เมนู<small class="tpill" id="tablePill"></small></h2>
+        <a class="round" id="cartBtn" href="cart.html">🛒<i id="cartN">0</i></a>
       </div>
+      <div class="seg" id="catSeg" style="width:max-content;margin:0 auto 8px"></div>
     </div>
 
-    <div id="list" style="margin-top:6px"></div>
+    <div id="pizzaList" style="margin-top:8px"></div>
+    <div id="drinkList" style="margin-top:8px" hidden></div>
 
-    <a class="ghost" href="builder.html">🎨 แต่งหน้าพิซซ่าเอง</a>
+    <a class="ghost" id="builderLink" href="builder.html">🎨 แต่งหน้าพิซซ่าเอง</a>
+  </div>
+
+  <div class="bar" id="cartBar" hidden>
+    <div>
+      <a class="cta" id="barBtn" href="cart.html" style="display:block;text-align:center;text-decoration:none">ดูตะกร้า</a>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -76,10 +84,70 @@
         price: { S: 199, M: 259, L: 319 },
         t: [["cheese", "มอสซาเรลลา", "moz", 7], ["bacon", "เบคอน", "bacon", 8], ["mushroom", "เห็ด", "mush", 9]] }
     ];
-    var SIZE_LABEL = { S: "เล็ก", M: "กลาง", L: "ใหญ่" };
 
-    function renderMenu() {
-      var list = document.getElementById("list");
+    // ===== รายการเครื่องดื่ม (ตัวอย่าง) =====
+    var DRINKS = [
+      { id: "water", name: "น้ำเปล่า", icon: "💧", price: 15 },
+      { id: "coke", name: "โค้ก", icon: "🥤", price: 25 },
+      { id: "orange", name: "น้ำส้มคั้นสด", icon: "🍊", price: 35 },
+      { id: "thaitea", name: "ชาไทยเย็น", icon: "🧋", price: 35 },
+      { id: "lemontea", name: "ชามะนาว", icon: "🍋", price: 35 },
+      { id: "coffee", name: "กาแฟเย็น", icon: "☕", price: 45 },
+      { id: "soda", name: "โซดามะนาว", icon: "🍹", price: 35 }
+    ];
+
+    // ===== แถบล่าง: สรุปตะกร้า =====
+    function updateBar() {
+      var n = cartCount();
+      document.getElementById("cartBar").hidden = n === 0;
+      document.body.classList.toggle("has-bar", n > 0);
+      document.getElementById("barBtn").textContent =
+        "ดูตะกร้า · " + n + " รายการ · " + cartTotal() + " บาท";
+    }
+    function refresh() { updateCartBadge(); updateBar(); }
+
+    function changeQty(key, d) {
+      var c = readCart();
+      var i = c.findIndex(function (it) { return it.key === key; });
+      if (i < 0) return;
+      c[i].qty = (c[i].qty || 1) + d;
+      if (c[i].qty <= 0) c.splice(i, 1);   // ลดจนเหลือ 0 = เอาออกจากตะกร้า
+      writeCart(c);
+      refresh();
+    }
+
+    // ปุ่มเพิ่ม: กดแล้วเปลี่ยนเป็นตัวเพิ่ม/ลดจำนวน
+    function bindControl(box, getKey, makeItem) {
+      function draw() {
+        var key = getKey();
+        var cart = readCart();
+        var idx = cart.findIndex(function (it) { return it.key === key; });
+        if (idx === -1) {
+          box.innerHTML = '<button class="madd">+ เพิ่ม</button>';
+          box.firstChild.onclick = function () {
+            var item = makeItem();
+            item.qty = 1;
+            var c = readCart();
+            c.push(item);
+            if (!writeCart(c)) { showToast("บันทึกไม่ได้ พื้นที่เก็บข้อมูลเต็ม"); return; }
+            showToast("เพิ่ม " + item.name + " แล้ว");
+            refresh();
+            draw();
+          };
+        } else {
+          box.innerHTML = '<div class="stepper"><button>−</button><b>' + (cart[idx].qty || 1) + "</b><button>+</button></div>";
+          var b = box.querySelectorAll("button");
+          b[0].onclick = function () { changeQty(key, -1); draw(); };
+          b[1].onclick = function () { changeQty(key, 1); draw(); };
+        }
+      }
+      box.redraw = draw;
+      draw();
+    }
+
+    // ===== วาดรายการพิซซ่า =====
+    function renderPizzas() {
+      var list = document.getElementById("pizzaList");
       PRODUCTS.forEach(function (p) {
         var size = "M";
         var card = document.createElement("div");
@@ -88,50 +156,85 @@
           '<div class="mth"><svg viewBox="-160 -160 320 320"></svg></div>' +
           '<div class="mbody"><h3>' + p.name + "</h3><p>" + p.desc + "</p>" +
           '<div class="msz"></div>' +
-          '<div class="mrow"><span class="mprice"></span><button class="madd">+ เพิ่มลงตะกร้า</button></div></div>';
+          '<div class="mrow"><span class="mprice"></span><div class="ctl"></div></div></div>';
         list.appendChild(card);
 
-        // วาดพิซซ่าตัวอย่าง
         var pz = new Pizza(card.querySelector("svg"));
         p.t.forEach(function (x) { pz.add({ id: x[0], s: x[2], k: x[3] }); });
 
         var szBox = card.querySelector(".msz");
         var priceEl = card.querySelector(".mprice");
-        function draw() {
+        var ctl = card.querySelector(".ctl");
+
+        function drawSize() {
           szBox.innerHTML = "";
           ["S", "M", "L"].forEach(function (s) {
             var b = document.createElement("button");
             b.textContent = s;
             b.className = s === size ? "on" : "";
-            b.onclick = function () { size = s; draw(); };
+            b.onclick = function () { size = s; drawSize(); ctl.redraw(); };
             szBox.appendChild(b);
           });
           priceEl.textContent = p.price[size] + " ฿";
         }
-        draw();
 
-        card.querySelector(".madd").onclick = function () {
-          var cart = readCart();
-          var found = cart.find(function (it) { return it.fromMenu && it.name === p.name && it.size === size; });
-          if (found) {
-            found.qty = (found.qty || 1) + 1;
-          } else {
-            cart.push({
-              name: p.name, size: size, sauce: "ซอสแดง",
+        bindControl(
+          ctl,
+          function () { return "p:" + p.id + ":" + size; },
+          function () {
+            return {
+              key: "p:" + p.id + ":" + size, name: p.name, size: size, sauce: "ซอสแดง",
               basePrice: p.price[size],
               toppings: p.t.map(function (x) { return { id: x[0], name: x[1], price: 0 }; }),
-              unitPrice: p.price[size], qty: 1, fromMenu: true
-            });
+              unitPrice: p.price[size],
+              look: snapshotLook(pz, "R")
+            };
           }
-          writeCart(cart);
-          updateCartBadge();
-          showToast("เพิ่ม " + p.name + " (" + size + ") ลงตะกร้าแล้ว");
-        };
+        );
+        drawSize();
       });
     }
 
-    renderMenu();
-    updateCartBadge();
+    // ===== วาดรายการเครื่องดื่ม =====
+    function renderDrinks() {
+      var list = document.getElementById("drinkList");
+      DRINKS.forEach(function (d) {
+        var card = document.createElement("div");
+        card.className = "mi dr";
+        card.innerHTML =
+          '<div class="thumb">' + d.icon + "</div>" +
+          '<div class="mbody"><h3>' + d.name + '</h3><span class="mprice">' + d.price + " ฿</span></div>" +
+          '<div class="ctl"></div>';
+        list.appendChild(card);
+        bindControl(
+          card.querySelector(".ctl"),
+          function () { return "d:" + d.id; },
+          function () { return { key: "d:" + d.id, name: d.name, icon: d.icon, unitPrice: d.price }; }
+        );
+      });
+    }
+
+    // ===== แท็บ พิซซ่า / เครื่องดื่ม =====
+    var tab = "pizza";
+    function drawTabs() {
+      var seg = document.getElementById("catSeg");
+      seg.innerHTML = "";
+      [["pizza", "🍕 พิซซ่า"], ["drink", "🥤 เครื่องดื่ม"]].forEach(function (x) {
+        var b = document.createElement("button");
+        b.textContent = x[1];
+        b.className = tab === x[0] ? "on" : "";
+        b.onclick = function () { tab = x[0]; drawTabs(); };
+        seg.appendChild(b);
+      });
+      document.getElementById("pizzaList").hidden = tab !== "pizza";
+      document.getElementById("builderLink").hidden = tab !== "pizza";
+      document.getElementById("drinkList").hidden = tab !== "drink";
+    }
+
+    renderPizzas();
+    renderDrinks();
+    drawTabs();
+    refresh();
   </script>
 </body>
 </html>

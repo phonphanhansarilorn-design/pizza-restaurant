@@ -49,16 +49,6 @@ function total() {
   return sum;
 }
 
-// ===== ตะกร้า (เก็บในเครื่อง) =====
-function readCart() {
-  try { return JSON.parse(localStorage.getItem("cart")) || []; } catch (e) { return []; }
-}
-function updateCartCount() {
-  var n = 0;
-  readCart().forEach(function (it) { n += it.qty || 1; });
-  document.getElementById("cartN").textContent = n;
-}
-
 // ===== ปุ่มขนาด =====
 function renderSeg() {
   var seg = document.getElementById("seg");
@@ -134,7 +124,7 @@ document.getElementById("sauceChip").onclick = function () {
   document.getElementById("sauceDot").style.background = sauce === "R" ? "#d83a22" : "#f3e2b8";
 };
 
-// ===== เพิ่มลงตะกร้า (มีเอฟเฟกต์อบ) =====
+// ===== เพิ่มลงตะกร้า: อบ -> พิซซ่าลอยเข้าตะกร้า -> เหลือพิซซ่าหน้าว่าง =====
 document.getElementById("addBtn").onclick = function () {
   pizza.bake(addDone);
 };
@@ -147,23 +137,75 @@ function addDone() {
   });
   var cart = readCart();
   cart.push({
+    key: "c:" + Date.now(),
     name: "พิซซ่าแต่งเอง",
     size: s.c,
     sauce: sauce === "R" ? "ซอสแดง" : "ซอสขาว",
     basePrice: s.p,
     toppings: list,
     unitPrice: total(),
-    qty: 1
+    qty: 1,
+    look: snapshotLook(pizza, sauce)   // เก็บหน้าตาพิซซ่าไว้โชว์ในตะกร้า
   });
-  localStorage.setItem("cart", JSON.stringify(cart));
-  updateCartCount();
-  var t = document.getElementById("toast");
-  t.classList.add("show");
-  setTimeout(function () { t.classList.remove("show"); }, 1500);
+  if (!writeCart(cart)) {
+    showToast("บันทึกไม่ได้ พื้นที่เก็บข้อมูลเต็ม ลองลบรายการในตะกร้าบางส่วน");
+    return;
+  }
+  flyToCart();      // ต้องทำก่อนล้างพิซซ่า เพราะจะคัดลอกภาพพิซซ่าไปลอย
+  resetPizza();
+  showToast("เพิ่มลงตะกร้าแล้ว · แต่งพิซซ่าถาดต่อไปได้เลย");
+}
+
+// พิซซ่าลอยเข้าไอคอนตะกร้า
+function flyToCart() {
+  var pz = document.getElementById("pz");
+  var btn = document.getElementById("cartBtn");
+  var r = pz.getBoundingClientRect();
+  var c = btn.getBoundingClientRect();
+
+  var fly = document.createElement("div");
+  fly.className = "fly";
+  fly.style.cssText = "left:" + r.left + "px;top:" + r.top + "px;width:" + r.width + "px";
+  var clone = pizza.svg.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.querySelectorAll(".pc").forEach(function (e) { e.classList.remove("pc"); });
+  fly.appendChild(clone);
+  document.body.appendChild(fly);
+
+  var dx = c.left + c.width / 2 - (r.left + r.width / 2);
+  var dy = c.top + c.height / 2 - (r.top + r.height / 2);
+  var anim = fly.animate([
+    { transform: "translate(0,0) scale(1) rotate(0deg)", opacity: 1 },
+    { transform: "translate(" + dx * 0.3 + "px," + (dy * 0.3 - 50) + "px) scale(.6) rotate(120deg)", opacity: 1, offset: 0.4 },
+    { transform: "translate(" + dx + "px," + dy + "px) scale(.08) rotate(360deg)", opacity: 0.3 }
+  ], { duration: 900, easing: "ease-in" });
+
+  anim.onfinish = function () {
+    fly.remove();
+    updateCartBadge();
+    btn.animate([
+      { transform: "scale(1)" },
+      { transform: "scale(1.35)" },
+      { transform: "scale(1)" }
+    ], { duration: 400 });
+  };
+}
+
+// ทำให้พิซซ่ากลับเป็นหน้าว่าง (ขนาดและซอสคงเดิม)
+function resetPizza() {
+  var ring = pizza.svg.querySelector(".bakeRing");
+  if (ring) ring.remove();
+  pizza.clear();
+  sel = [];
+  renderMenu();
+  update();
+  pizza.svg.animate([
+    { opacity: 0, transform: "scale(.85)" },
+    { opacity: 1, transform: "scale(1)" }
+  ], { duration: 450, easing: "ease-out" });
 }
 
 // ===== เริ่มทำงาน =====
 renderSeg();
 renderMenu();
 update();
-updateCartCount();

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แต่งหน้าพิซซ่า</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <a href="index.html">←</a>
+    <h1>แต่งหน้าพิซซ่า</h1>
+    <a href="cart.html">🛒</a>
+  </header>
+
+  <div class="container">
+    <h3 class="section">1. เลือกขนาด</h3>
+    <div class="size-row" id="sizeRow"></div>
+
+    <div class="pizza-stage">
+      <div class="pizza size-M" id="pizza"></div>
+    </div>
+
+    <h3 class="section">2. เลือกท็อปปิ้ง</h3>
+    <div class="topping-grid" id="toppingGrid"></div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="row">
+      <span>ราคารวม</span>
+      <span id="totalPrice">0 บาท</span>
+    </div>
+    <button class="btn btn-primary" id="addCartBtn">เพิ่มลงตะกร้า</button>
+  </div>
+
+  <script src="js/builder.js"></script>
+</body>
+</html>

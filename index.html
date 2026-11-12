@@ -2,36 +2,43 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ร้านพิซซ่า</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pizza House</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="hero">
-      <div class="logo">🍕</div>
-      <h2>Pizza House</h2>
-      <p>พิซซ่าอบสดใหม่ แต่งหน้าเองได้ตามใจ</p>
-      <div id="tableBadge"></div>
-      <div class="hero-pizza">🍕</div>
+  <div class="screen home">
+    <h1>Pizza</h1>
+    <div class="rule"></div>
+    <div class="sub">อบสด · แต่งเองได้</div>
+    <div id="tableBadge"></div>
+
+    <div class="stage" style="margin-top:12px">
+      <div class="pz L"><svg id="homeSvg" viewBox="-160 -160 320 320"></svg></div>
     </div>
 
-    <a class="btn btn-primary" href="menu.html">ดูเมนู</a>
-    <a class="btn btn-secondary" href="builder.html">แต่งหน้าพิซซ่าเอง</a>
-    <button class="btn btn-secondary" id="scanBtn">สแกน QR Code</button>
+    <p class="tag">เลือกแต่งพิซซ่าได้ตามใจคุณ</p>
+    <a class="cta" href="builder.html">แต่งพิซซ่าของคุณ →</a>
+    <a class="ghost" href="menu.html">ดูเมนู</a>
+    <button class="ghost" id="scanBtn">📷 สแกน QR Code</button>
   </div>
 
+  <script src="js/pizza.js"></script>
   <script>
+    // วาดพิซซ่ามาร์เกอริตาบนหน้าแรก
+    var home = new Pizza(document.getElementById("homeSvg"));
+    home.add({ id: "cheese", s: "moz", k: 9 });
+    home.add({ id: "basil", s: "basil", k: 7 });
+
     // อ่านหมายเลขโต๊ะจากลิงก์ เช่น index.html?table=5
     var params = new URLSearchParams(window.location.search);
     var table = params.get("table");
-    if (table) {
-      localStorage.setItem("table", table);
-    }
+    if (table) { localStorage.setItem("table", table); }
     var saved = localStorage.getItem("table");
     if (saved) {
       document.getElementById("tableBadge").innerHTML =
-        '<span class="table-badge">โต๊ะ ' + saved + '</span>';
+        '<span class="badge">📍 โต๊ะ ' + saved + "</span>";
     }
     document.getElementById("scanBtn").onclick = function () {
       alert("เปิดกล้องโทรศัพท์แล้วสแกน QR Code ที่ติดอยู่บนโต๊ะได้เลย ระบบจะพามาที่หน้านี้พร้อมหมายเลขโต๊ะอัตโนมัติ");

@@ -6,8 +6,117 @@
   <title>Pizza House</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* ===== หน้าเปิดตัว ===== */
+    #splash {
+      position: fixed; inset: 0; z-index: 200;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 42%, #3a1f10 0%, #14100d 65%);
+      transition: opacity .6s ease, transform .6s ease;
+    }
+    #splash.out { opacity: 0; transform: scale(1.08); pointer-events: none; }
+    .sp-logo {
+      position: relative; width: 110px; height: 110px; border-radius: 34px;
+      display: flex; align-items: center; justify-content: center; font-size: 60px;
+      background: linear-gradient(135deg, #ff5a4d, #ff8a3d);
+      box-shadow: 0 0 50px rgba(255,120,40,.6);
+      animation: logoIn .9s cubic-bezier(.3,1.5,.5,1) both;
+    }
+    .sp-logo::after {
+      content: ""; position: absolute; inset: -14px; border-radius: 44px;
+      border: 2px solid rgba(255,190,90,.6);
+      animation: ring 1.6s ease-out infinite;
+    }
+    @keyframes logoIn {
+      from { transform: scale(.2) rotate(-40deg); opacity: 0; }
+      to   { transform: scale(1) rotate(-6deg); opacity: 1; }
+    }
+    @keyframes ring {
+      from { transform: scale(.85); opacity: .9; }
+      to   { transform: scale(1.35); opacity: 0; }
+    }
+    .sp-name {
+      margin-top: 24px; font: 900 38px "Playfair Display", serif; color: #f7efe6;
+      animation: up .7s .5s both;
+    }
+    .sp-sub {
+      margin-top: 4px; letter-spacing: 3px; font-size: 12px; font-weight: 600; color: #dcb46c;
+      animation: up .7s .7s both;
+    }
+    @keyframes up {
+      from { transform: translateY(14px); opacity: 0; }
+      to   { transform: none; opacity: 1; }
+    }
+    .sp-stars { display: flex; gap: 8px; margin-top: 16px; font-size: 28px; color: #ffc857; }
+    .sp-stars span {
+      text-shadow: 0 0 14px rgba(255,190,60,.9);
+      animation: pop .5s cubic-bezier(.3,1.6,.5,1) both;
+    }
+    @keyframes pop {
+      from { transform: scale(0) rotate(-90deg); opacity: 0; }
+      to   { transform: scale(1) rotate(0); opacity: 1; }
+    }
+    .sp-spark {
+      position: absolute; color: #ffd98a; pointer-events: none;
+      animation: tw 1.6s ease-in-out infinite;
+    }
+    @keyframes tw {
+      0%, 100% { opacity: 0; transform: scale(.3); }
+      50%      { opacity: 1; transform: scale(1); }
+    }
+  </style>
 </head>
 <body>
+  <!-- หน้าเปิดตัว: แสดงประมาณ 3 วินาที กดที่หน้าจอเพื่อข้ามได้ -->
+  <div id="splash">
+    <div class="sp-logo">🍕</div>
+    <div class="sp-name">Pizza House</div>
+    <div class="sp-sub">อบสด · แต่งเองได้</div>
+    <div class="sp-stars">
+      <span style="animation-delay:1.0s">★</span>
+      <span style="animation-delay:1.2s">★</span>
+      <span style="animation-delay:1.4s">★</span>
+      <span style="animation-delay:1.6s">★</span>
+      <span style="animation-delay:1.8s">★</span>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var sp = document.getElementById("splash");
+      var seen = false;
+      try { seen = sessionStorage.getItem("splashSeen") === "1"; } catch (e) {}
+      // เติม ?splash=1 ท้ายลิงก์ เพื่อบังคับให้แสดงอีกครั้ง (ใช้ตอนทดสอบ)
+      if (new URLSearchParams(window.location.search).get("splash") === "1") seen = false;
+
+      if (seen) { sp.remove(); return; }
+      try { sessionStorage.setItem("splashSeen", "1"); } catch (e) {}
+
+      // ประกายดาวกระพริบรอบ ๆ
+      for (var i = 0; i < 18; i++) {
+        var s = document.createElement("span");
+        s.className = "sp-spark";
+        s.textContent = "✦";
+        s.style.left = Math.random() * 96 + "%";
+        s.style.top = Math.random() * 96 + "%";
+        s.style.fontSize = 10 + Math.random() * 16 + "px";
+        s.style.animationDelay = Math.random() * 1.6 + "s";
+        s.style.animationDuration = 1.2 + Math.random() * 1.2 + "s";
+        sp.appendChild(s);
+      }
+
+      var closed = false;
+      function closeSplash() {
+        if (closed) return;
+        closed = true;
+        sp.classList.add("out");
+        setTimeout(function () { sp.remove(); }, 650);
+      }
+      setTimeout(closeSplash, 3000);   // 3000 = 3 วินาที (แก้ตัวเลขนี้เพื่อปรับเวลา)
+      sp.onclick = closeSplash;
+    })();
+  </script>
+
+  <!-- ===== หน้าร้าน ===== -->
   <div class="screen home">
     <h1>Pizza</h1>
     <div class="rule"></div>

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    /* ===== หน้าเปิดตัว ===== */
+    /* ===== หน้าโลโก้ตอนเปิดเว็บ ===== */
     #splash {
       position: fixed; inset: 0; z-index: 200;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -64,10 +64,22 @@
       0%, 100% { opacity: 0; transform: scale(.3); }
       50%      { opacity: 1; transform: scale(1); }
     }
+
+    /* ===== ป้ายสแกนสำเร็จ ===== */
+    .badge.scan-ok {
+      border-color: #3fae5a; color: #8be2a2; background: rgba(63,174,90,.12);
+      font-weight: 600; font-size: 14px;
+      animation: scanPop .6s cubic-bezier(.3,1.6,.5,1) both;
+      animation-delay: var(--d, 0s);
+    }
+    @keyframes scanPop {
+      from { transform: scale(.4); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
   </style>
 </head>
 <body>
-  <!-- หน้าเปิดตัว: แสดงประมาณ 3 วินาที กดที่หน้าจอเพื่อข้ามได้ -->
+  <!-- หน้าโลโก้: แสดงประมาณ 3 วินาที กดที่หน้าจอเพื่อข้ามได้ -->
   <div id="splash">
     <div class="sp-logo">🍕</div>
     <div class="sp-name">Pizza House</div>
@@ -81,14 +93,16 @@
     </div>
   </div>
   <script>
+    var splashShown = false;
     (function () {
       var sp = document.getElementById("splash");
       var seen = false;
       try { seen = sessionStorage.getItem("splashSeen") === "1"; } catch (e) {}
-      // เติม ?splash=1 ท้ายลิงก์ เพื่อบังคับให้แสดงอีกครั้ง (ใช้ตอนทดสอบ)
+      // เติม splash=1 ท้ายลิงก์ เพื่อบังคับให้แสดงอีกครั้ง (ใช้ตอนทดสอบ)
       if (new URLSearchParams(window.location.search).get("splash") === "1") seen = false;
 
       if (seen) { sp.remove(); return; }
+      splashShown = true;
       try { sessionStorage.setItem("splashSeen", "1"); } catch (e) {}
 
       // ประกายดาวกระพริบรอบ ๆ
@@ -140,15 +154,28 @@
     home.add({ id: "cheese", s: "moz", k: 9 });
     home.add({ id: "basil", s: "basil", k: 7 });
 
-    // อ่านหมายเลขโต๊ะจากลิงก์ เช่น index.html?table=5
+    // ===== ระบบโต๊ะ =====
+    // QR ประจำโต๊ะลิงก์มาแบบนี้: .../pizza-restaurant/?table=5
     var params = new URLSearchParams(window.location.search);
     var table = params.get("table");
-    if (table) { localStorage.setItem("table", table); }
-    var saved = localStorage.getItem("table");
-    if (saved) {
-      document.getElementById("tableBadge").innerHTML =
-        '<span class="badge">📍 โต๊ะ ' + saved + "</span>";
+    var badge = document.getElementById("tableBadge");
+
+    if (table) {
+      // ลูกค้าเพิ่งสแกนเข้ามา: จำโต๊ะไว้ แล้วโชว์ป้ายสแกนสำเร็จ
+      table = table.replace(/[^0-9A-Za-z_-]/g, "").slice(0, 10);
+      try { localStorage.setItem("table", table); } catch (e) {}
+      var d = splashShown ? 3.1 : 0.1;   // รอให้หน้าโลโก้จบก่อน
+      badge.innerHTML =
+        '<span class="badge scan-ok" style="--d:' + d + 's;opacity:0">✅ สแกนสำเร็จ · โต๊ะ ' + table + "</span>";
+    } else {
+      // เข้ามาโดยไม่ได้สแกน: ถ้าเคยมีโต๊ะที่จำไว้ ก็โชว์ป้ายปกติ
+      var saved = null;
+      try { saved = localStorage.getItem("table"); } catch (e) {}
+      if (saved) {
+        badge.innerHTML = '<span class="badge">📍 โต๊ะ ' + saved + "</span>";
+      }
     }
+
     document.getElementById("scanBtn").onclick = function () {
       alert("เปิดกล้องโทรศัพท์แล้วสแกน QR Code ที่ติดอยู่บนโต๊ะได้เลย ระบบจะพามาที่หน้านี้พร้อมหมายเลขโต๊ะอัตโนมัติ");
     };

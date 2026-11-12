@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ร้านพิซซ่า</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="hero">
+      <div class="logo">🍕</div>
+      <h2>Pizza House</h2>
+      <p>พิซซ่าอบสดใหม่ แต่งหน้าเองได้ตามใจ</p>
+      <div id="tableBadge"></div>
+      <div class="hero-pizza">🍕</div>
+    </div>
+
+    <a class="btn btn-primary" href="menu.html">ดูเมนู</a>
+    <a class="btn btn-secondary" href="builder.html">แต่งหน้าพิซซ่าเอง</a>
+    <button class="btn btn-secondary" id="scanBtn">สแกน QR Code</button>
+  </div>
+
+  <script>
+    // อ่านหมายเลขโต๊ะจากลิงก์ เช่น index.html?table=5
+    var params = new URLSearchParams(window.location.search);
+    var table = params.get("table");
+    if (table) {
+      localStorage.setItem("table", table);
+    }
+    var saved = localStorage.getItem("table");
+    if (saved) {
+      document.getElementById("tableBadge").innerHTML =
+        '<span class="table-badge">โต๊ะ ' + saved + '</span>';
+    }
+    document.getElementById("scanBtn").onclick = function () {
+      alert("เปิดกล้องโทรศัพท์แล้วสแกน QR Code ที่ติดอยู่บนโต๊ะได้เลย ระบบจะพามาที่หน้านี้พร้อมหมายเลขโต๊ะอัตโนมัติ");
+    };
+  </script>
+</body>
+</html>

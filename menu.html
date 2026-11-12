@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>เมนูพิซซ่า</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .toast { width: max-content; max-width: 90vw; text-align: center; }
+    .mi {
+      display: flex; gap: 12px; align-items: center; padding: 14px;
+      margin-bottom: 14px; border-radius: 22px; border: 1px solid var(--line);
+      background: linear-gradient(160deg, #2c231c, #1f1813);
+    }
+    .mth { width: 104px; flex-shrink: 0; filter: drop-shadow(0 8px 8px rgba(0,0,0,.5)); }
+    .mth svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .mbody { flex: 1; min-width: 0; }
+    .mbody h3 { font-size: 17px; font-weight: 600; }
+    .mbody p { color: var(--muted); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
+    .msz { display: flex; gap: 6px; margin-top: 10px; }
+    .msz button {
+      width: 38px; height: 30px; border-radius: 999px; border: 1px solid var(--line);
+      background: rgba(255,255,255,.06); color: var(--text); font: 600 13px "Prompt"; cursor: pointer;
+    }
+    .msz button.on { background: #fff; color: #1a120c; }
+    .mrow { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 8px; }
+    .mprice { font-size: 20px; font-weight: 700; color: var(--gold); }
+    .madd {
+      padding: 9px 14px; border: 0; border-radius: 999px; color: #fff; cursor: pointer;
+      background: linear-gradient(135deg, #f26a21, #ff9a45); font: 600 13px "Prompt";
+      box-shadow: 0 6px 14px rgba(242,106,33,.4);
+    }
+    .madd:active { transform: scale(.95); }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="sticky">
+      <div class="top" style="padding:10px 0 12px">
+        <a class="round" href="index.html">‹</a>
+        <h2>เมนูพิซซ่า</h2>
+        <a class="round" href="cart.html">🛒<i id="cartN">0</i></a>
+      </div>
+    </div>
+
+    <div id="list" style="margin-top:6px"></div>
+
+    <a class="ghost" href="builder.html">🎨 แต่งหน้าพิซซ่าเอง</a>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="js/pizza.js"></script>
+  <script src="js/cart.js"></script>
+  <script>
+    // ===== รายการพิซซ่า (ตัวอย่าง ภายหลังจะดึงจาก Supabase) =====
+    // t = ท็อปปิ้ง: [id, ชื่อไทย, รูปทรง, จำนวนชิ้น]
+    var PRODUCTS = [
+      { id: "margherita", name: "มาร์เกอริตา", desc: "ซอสมะเขือเทศ มอสซาเรลลา โหระพาสด",
+        price: { S: 169, M: 229, L: 289 },
+        t: [["cheese", "มอสซาเรลลา", "moz", 9], ["basil", "โหระพา", "basil", 7]] },
+      { id: "pepperoni", name: "เปปเปอโรนี", desc: "มอสซาเรลลาเยิ้ม เปปเปอโรนีรสจัดจ้าน",
+        price: { S: 189, M: 249, L: 309 },
+        t: [["cheese", "มอสซาเรลลา", "moz", 8], ["pepperoni", "เปปเปอโรนี", "pep", 12]] },
+      { id: "hawaiian", name: "ฮาวายเอี้ยน", desc: "แฮม สับปะรดหวานฉ่ำ มอสซาเรลลา",
+        price: { S: 189, M: 249, L: 309 },
+        t: [["cheese", "มอสซาเรลลา", "moz", 8], ["ham", "แฮม", "ham", 8], ["pineapple", "สับปะรด", "pine", 8]] },
+      { id: "fourcheese", name: "โฟร์ชีส", desc: "มอสซาเรลลา สกาโมร์ซา กอร์กอนโซลา พาร์เมซาน",
+        price: { S: 209, M: 269, L: 329 },
+        t: [["cheese", "มอสซาเรลลา", "moz", 7], ["scam", "สกาโมร์ซา", "scam", 6], ["gorg", "กอร์กอนโซลา", "gorg", 6], ["parm", "พาร์เมซาน", "parm", 8]] },
+      { id: "seafood", name: "ซีฟู้ด", desc: "กุ้ง ทูน่า มะกอกดำ มะเขือเทศ",
+        price: { S: 219, M: 279, L: 339 },
+        t: [["shr", "กุ้ง", "shr", 7], ["tuna", "ทูน่า", "tuna", 6], ["oli", "มะกอกดำ", "oli", 10], ["tom", "มะเขือเทศ", "tom", 6]] },
+      { id: "baconmush", name: "เบคอนเห็ด", desc: "เบคอนกรอบ เห็ดสด มอสซาเรลลา",
+        price: { S: 199, M: 259, L: 319 },
+        t: [["cheese", "มอสซาเรลลา", "moz", 7], ["bacon", "เบคอน", "bacon", 8], ["mushroom", "เห็ด", "mush", 9]] }
+    ];
+    var SIZE_LABEL = { S: "เล็ก", M: "กลาง", L: "ใหญ่" };
+
+    function renderMenu() {
+      var list = document.getElementById("list");
+      PRODUCTS.forEach(function (p) {
+        var size = "M";
+        var card = document.createElement("div");
+        card.className = "mi";
+        card.innerHTML =
+          '<div class="mth"><svg viewBox="-160 -160 320 320"></svg></div>' +
+          '<div class="mbody"><h3>' + p.name + "</h3><p>" + p.desc + "</p>" +
+          '<div class="msz"></div>' +
+          '<div class="mrow"><span class="mprice"></span><button class="madd">+ เพิ่มลงตะกร้า</button></div></div>';
+        list.appendChild(card);
+
+        // วาดพิซซ่าตัวอย่าง
+        var pz = new Pizza(card.querySelector("svg"));
+        p.t.forEach(function (x) { pz.add({ id: x[0], s: x[2], k: x[3] }); });
+
+        var szBox = card.querySelector(".msz");
+        var priceEl = card.querySelector(".mprice");
+        function draw() {
+          szBox.innerHTML = "";
+          ["S", "M", "L"].forEach(function (s) {
+            var b = document.createElement("button");
+            b.textContent = s;
+            b.className = s === size ? "on" : "";
+            b.onclick = function () { size = s; draw(); };
+            szBox.appendChild(b);
+          });
+          priceEl.textContent = p.price[size] + " ฿";
+        }
+        draw();
+
+        card.querySelector(".madd").onclick = function () {
+          var cart = readCart();
+          var found = cart.find(function (it) { return it.fromMenu && it.name === p.name && it.size === size; });
+          if (found) {
+            found.qty = (found.qty || 1) + 1;
+          } else {
+            cart.push({
+              name: p.name, size: size, sauce: "ซอสแดง",
+              basePrice: p.price[size],
+              toppings: p.t.map(function (x) { return { id: x[0], name: x[1], price: 0 }; }),
+              unitPrice: p.price[size], qty: 1, fromMenu: true
+            });
+          }
+          writeCart(cart);
+          updateCartBadge();
+          showToast("เพิ่ม " + p.name + " (" + size + ") ลงตะกร้าแล้ว");
+        };
+      });
+    }
+
+    renderMenu();
+    updateCartBadge();
+  </script>
+</body>
+</html>

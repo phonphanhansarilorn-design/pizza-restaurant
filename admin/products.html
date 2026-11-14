@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · จัดการเมนู</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/pizza.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "products", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var tab = "menu", cats = [], tops = [], prods = [];
+      var KIND_TH = { custom: "พิซซ่าแต่งเอง", pizza: "พิซซ่า", drink: "เครื่องดื่ม" };
+      var SHAPES = {
+        moz: "ชีสก้อน", buf: "ชีสมอสซาเรลลาควาย", scam: "สกาโมร์ซา", gorg: "กอร์กอนโซลา", parm: "พาร์เมซานเกล็ด",
+        ric: "ริคอตต้า", pep: "เปปเปอโรนี", ham: "แฮม", bacon: "เบคอน", sau: "ไส้กรอก", tuna: "ทูน่า",
+        anch: "แอนโชวี่", shr: "กุ้ง", mush: "เห็ด", pine: "สับปะรด", oli: "มะกอกดำ", bell: "พริกหวาน",
+        onion: "หอมแดง", tom: "มะเขือเทศ", corn: "ข้าวโพด", jal: "ฮาลาปิโน", basil: "ใบโหระพา",
+        oreg: "ผงออริกาโน", garl: "กระเทียม", pest: "เพสโต้", chil: "น้ำมันพริก"
+      };
+
+      // ---------- ตัวช่วย ----------
+      function safeImg(u) { return u && /^https:\/\//.test(u) ? u : null; }
+      function catName(id) {
+        var x = cats.find(function (k) { return k.id === id; });
+        return x ? x.name : "ไม่ระบุหมวด";
+      }
+      function priceTxt(p) {
+        if (p.kind === "drink") return baht(p.price);
+        return "S " + Number(p.price_s) + " · M " + Number(p.price_m) + " · L " + Number(p.price_l);
+      }
+      function pimgHtml(p) {
+        var u = safeImg(p.image_url);
+        if (u) return '<img src="' + esc(u) + '" alt="" loading="lazy">';
+        return p.kind === "drink" ? esc(p.icon || "🥤") : p.kind === "custom" ? "🎨" : "🍕";
+      }
+      function nextSort(arr) {
+        var m = 0;
+        arr.forEach(function (x) { if (x.sort_order > m) m = x.sort_order; });
+        return m + 1;
+      }
+      function numVal(root, id, max) {
+        var v = root.querySelector("#" + id).value.trim();
+        var n = Number(v);
+        if (v === "" || !isFinite(n) || n < 0 || n > max) return null;
+        return n;
+      }
+
+      // ---------- โหลดข้อมูล ----------
+      async function load() {
+        var r;
+        try {
+          r = await Promise.all([
+            db.from("categories").select("*").order("sort_order").order("id"),
+            db.from("products").select("*").order("sort_order").order("id"),
+            db.from("toppings").select("*").order("sort_order").order("id")
+          ]);
+        } catch (e) { r = null; }
+        if (!r || r[0].error || r[1].error || r[2].error) {
+          Admin.setDb(false);
+          c.innerHTML = '<div class="panel empty">โหลดข้อมูลไม่สำเร็จ<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        cats = r[0].data; prods = r[1].data; tops = r[2].data;
+        draw();
+      }
+
+      // ---------- วาดหน้า ----------
+      function draw() {
+        var h = '<div class="bar2"><div class="tools" style="margin:0">' +
+          '<button class="chip' + (tab === "menu" ? " on" : "") + '" data-tab="menu">เมนู (' + prods.length + ")</button>" +
+          '<button class="chip' + (tab === "top" ? " on" : "") + '" data-tab="top">ท็อปปิ้ง (' + tops.length + ")</button></div>" +
+          '<button class="btn accent" data-add="' + tab + '">+ ' + (tab === "menu" ? "เพิ่มเมนู" : "เพิ่มท็อปปิ้ง") + "</button></div>";
+        h += tab === "menu" ? menuList() : topList();
+        c.innerHTML = h;
+      }
+
+      function menuList() {
+        if (!prods.length) return '<div class="panel empty">ยังไม่มีเมนู</div>';
+        var h = "";
+        ["custom", "pizza", "drink"].forEach(function (k) {
+          var list = prods.filter(function (p) { return p.kind === k; });
+          if (!list.length) return;
+          h += '<div class="gh">' + KIND_TH[k] + " (" + list.length + ")</div>";
+          list.forEach(function (p) {
+            h += '<div class="prow' + (p.available ? "" : " off") + '"><div class="pimg">' + pimgHtml(p) + "</div>" +
+              '<div class="pinfo"><b>' + esc(p.name) + "</b>" +
+              '<div class="muted sm">' + priceTxt(p) + "</div>" +
+              '<div class="muted sm"><span class="kbadge">' + esc(catName(p.category_id)) + "</span>" +
+              (p.available ? "" : "ปิดขายอยู่") + "</div></div>" +
+              '<div class="pctl"><label class="sw"><input type="checkbox" data-tg="' + p.id + '" data-k="p"' +
+              (p.available ? " checked" : "") + '><i></i></label>' +
+              '<button class="btn" data-edit="p:' + p.id + '">แก้ไข</button></div></div>';
+          });
+        });
+        return h;
+      }
+
+      function topList() {
+        if (!tops.length) return '<div class="panel empty">ยังไม่มีท็อปปิ้ง</div>';
+        var groups = [];
+        tops.forEach(function (t) { if (groups.indexOf(t.category) === -1) groups.push(t.category); });
+        var h = "";
+        groups.forEach(function (g) {
+          h += '<div class="gh">' + esc(g) + "</div>";
+          tops.filter(function (t) { return t.category === g; }).forEach(function (t) {
+            h += '<div class="prow' + (t.available ? "" : " off") + '"><div class="pimg">' +
+              (SH[t.shape] ? '<svg viewBox="-20 -20 40 40">' + SH[t.shape] + "</svg>" : "?") + "</div>" +
+              '<div class="pinfo"><b>' + esc(t.name) + "</b>" +
+              '<div class="muted sm">+' + Number(t.price) + " บาท · " + t.pieces + " ชิ้นบนพิซซ่า</div>" +
+              (t.available ? "" : '<div class="muted sm">ปิดขายอยู่</div>') + "</div>" +
+              '<div class="pctl"><label class="sw"><input type="checkbox" data-tg="' + t.id + '" data-k="t"' +
+              (t.available ? " checked" : "") + '><i></i></label>' +
+              '<button class="btn" data-edit="t:' + t.id + '">แก้ไข</button></div></div>';
+          });
+        });
+        return h;
+      }
+
+      // ---------- เหตุการณ์บนหน้า ----------
+      c.addEventListener("click", function (e) {
+        var t = e.target.closest("[data-tab]");
+        if (t) { tab = t.getAttribute("data-tab"); draw(); return; }
+        var a = e.target.closest("[data-add]");
+        if (a) { if (a.getAttribute("data-add") === "menu") openProd(null); else openTop(null); return; }
+        var ed = e.target.closest("[data-edit]");
+        if (ed) {
+          var parts = ed.getAttribute("data-edit").split(":");
+          if (parts[0] === "p") openProd(Number(parts[1])); else openTop(Number(parts[1]));
+        }
+      });
+
+      // สวิตช์เปิด-ปิดขาย
+      c.addEventListener("change", async function (e) {
+        var i = e.target.closest("input[data-tg]");
+        if (!i) return;
+        var isP = i.getAttribute("data-k") === "p";
+        var id = Number(i.getAttribute("data-tg")), val = i.checked;
+        var r;
+        try {
+          r = await db.from(isP ? "products" : "toppings").update({ available: val }).eq("id", id).select("id");
+        } catch (x) { r = { error: { message: "x" } }; }
+        if (r.error || !r.data || !r.data.length) {
+          i.checked = !val;
+          Admin.toast("บันทึกไม่สำเร็จ");
+          return;
+        }
+        var obj = (isP ? prods : tops).find(function (x) { return x.id === id; });
+        if (obj) obj.available = val;
+        i.closest(".prow").classList.toggle("off", !val);
+        Admin.toast(val ? "เปิดขายแล้ว" : "ปิดขายแล้ว");
+      });
+
+      // ---------- ฟอร์มเมนู ----------
+      function openProd(id) {
+        var p = id ? prods.find(function (x) { return x.id === id; }) : null;
+        var imgUrl = p ? p.image_url : null, newFile = null, objUrl = null;
+        var rec0 = (p && p.recipe) || [];
+        var items = tops.map(function (t) {
+          var ex = rec0.find(function (x) { return x[0] === t.code; });
+          return { code: t.code, name: t.name, shape: t.shape, pieces: ex ? ex[3] : t.pieces, on: !!ex };
+        });
+        rec0.forEach(function (x) {
+          if (!tops.some(function (t) { return t.code === x[0]; })) {
+            items.push({ code: x[0], name: x[1], shape: x[2], pieces: x[3], on: true, gone: true });
+          }
+        });
+
+        var kindOpts = p && p.kind === "custom"
+          ? '<option value="custom">พิซซ่าแต่งเอง</option>'
+          : '<option value="pizza">พิซซ่า</option><option value="drink">เครื่องดื่ม</option>';
+        var catOpts = '<option value="">— ไม่ระบุ —</option>' + cats.map(function (k) {
+          return '<option value="' + k.id + '">' + esc(k.name) + "</option>";
+        }).join("");
+
+        var ov = Admin.modal(
+          "<h2>" + (p ? "แก้ไขเมนู" : "เพิ่มเมนู") + "</h2>" +
+          '<label class="l">ประเภท</label><select id="f_kind"' + (p ? " disabled" : "") + ">" + kindOpts + "</select>" +
+          '<label class="l">ชื่อเมนู</label><input id="f_name" maxlength="60" value="' + esc(p ? p.name : "") + '">' +
+          '<label class="l">หมวดหมู่</label><select id="f_cat">' + catOpts + "</select>" +
+          '<div id="f_pz"><label class="l">คำอธิบาย</label><textarea id="f_desc" maxlength="200">' + esc(p ? p.description : "") + "</textarea>" +
+            '<label class="l">ราคา (บาท)</label><div class="g3">' +
+            '<div><span>ขนาด S</span><input id="f_s" type="number" min="0" step="1" inputmode="decimal"></div>' +
+            '<div><span>ขนาด M</span><input id="f_m" type="number" min="0" step="1" inputmode="decimal"></div>' +
+            '<div><span>ขนาด L</span><input id="f_l" type="number" min="0" step="1" inputmode="decimal"></div></div>' +
+            '<div id="f_rec"><label class="l">ท็อปปิ้งในสูตร (กดเลือก)</label><div class="chips" id="f_chips"></div></div></div>' +
+          '<div id="f_dr"><label class="l">ไอคอน (อีโมจิ)</label><input id="f_icon" maxlength="4" value="' + esc(p && p.icon ? p.icon : "🥤") + '">' +
+            '<label class="l">ราคา (บาท)</label><input id="f_price" type="number" min="0" step="1" inputmode="decimal"></div>' +
+          '<label class="l">รูปภาพ</label><div class="imgbox"><div class="pimg" id="f_img"></div><div>' +
+            '<span class="btn filebtn">เลือกรูป<input id="f_file" type="file" accept="image/*"></span> ' +
+            '<button class="btn danger" id="f_rmimg" type="button">ลบรูป</button>' +
+            '<div class="muted sm" style="margin-top:6px">ระบบย่อรูปให้อัตโนมัติ</div></div></div>' +
+          '<label class="l">ลำดับแสดง (เลขน้อยขึ้นก่อน)</label><input id="f_sort" type="number" step="1" value="' + (p ? p.sort_order : nextSort(prods)) + '">' +
+          '<label class="chk"><input type="checkbox" id="f_av"' + (!p || p.available ? " checked" : "") + "> เปิดขาย</label>" +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact">' + (p && p.kind !== "custom" ? '<button class="btn danger" id="f_del">ลบเมนู</button>' : "") +
+          '<button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+
+        if (p) {
+          $("f_kind").value = p.kind;
+          $("f_cat").value = p.category_id || "";
+          if (p.kind === "drink") $("f_price").value = p.price == null ? "" : Number(p.price);
+          else {
+            $("f_s").value = p.price_s == null ? "" : Number(p.price_s);
+            $("f_m").value = p.price_m == null ? "" : Number(p.price_m);
+            $("f_l").value = p.price_l == null ? "" : Number(p.price_l);
+          }
+        }
+
+        function sync() {
+          var k = $("f_kind").value;
+          $("f_pz").hidden = k === "drink";
+          $("f_dr").hidden = k !== "drink";
+          $("f_rec").hidden = k !== "pizza";
+        }
+        sync();
+        $("f_kind").onchange = sync;
+
+        function drawChips() {
+          $("f_chips").innerHTML = items.map(function (it, i) {
+            return '<button type="button" class="cp' + (it.on ? " on" : "") + (it.gone ? " gone" : "") + '" data-i="' + i + '">' +
+              esc(it.name) + (it.gone ? " (ถูกลบ)" : "") + "</button>";
+          }).join("") || '<span class="muted sm">ยังไม่มีท็อปปิ้ง ไปเพิ่มที่แท็บท็อปปิ้งก่อน</span>';
+        }
+        drawChips();
+        $("f_chips").onclick = function (e) {
+          var b = e.target.closest(".cp");
+          if (!b) return;
+          var it = items[Number(b.getAttribute("data-i"))];
+          it.on = !it.on;
+          drawChips();
+        };
+
+        function drawImg() {
+          var src = objUrl || safeImg(imgUrl);
+          $("f_img").innerHTML = src ? '<img src="' + esc(src) + '" alt="">' : (function () {
+            var k = $("f_kind").value;
+            return k === "drink" ? esc($("f_icon").value || "🥤") : k === "custom" ? "🎨" : "🍕";
+          })();
+        }
+        drawImg();
+        $("f_file").onchange = function () {
+          var f = this.files && this.files[0];
+          if (!f) return;
+          if (f.size > 25e6) { showErr("ไฟล์ใหญ่เกินไป (เกิน 25 MB)"); this.value = ""; return; }
+          newFile = f;
+          if (objUrl) URL.revokeObjectURL(objUrl);
+          objUrl = URL.createObjectURL(f);
+          drawImg();
+        };
+        $("f_rmimg").onclick = function () {
+          newFile = null; imgUrl = null;
+          if (objUrl) URL.revokeObjectURL(objUrl);
+          objUrl = null;
+          $("f_file").value = "";
+          drawImg();
+        };
+
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        function closeAll() { if (objUrl) URL.revokeObjectURL(objUrl); ov.close(); }
+        $("f_cancel").onclick = closeAll;
+
+        if ($("f_del")) {
+          $("f_del").onclick = async function () {
+            if (!confirm("ลบเมนู \"" + p.name + "\" ใช่หรือไม่? (ประวัติออเดอร์เก่ายังอยู่ครบ)")) return;
+            var r;
+            try { r = await db.from("products").delete().eq("id", p.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+            if (r.error || !r.data || !r.data.length) { showErr((r.error && r.error.message) || "ลบไม่สำเร็จ"); return; }
+            if (p.image_url) Admin.removeImage(p.image_url);
+            closeAll();
+            Admin.toast("ลบแล้ว");
+            load();
+          };
+        }
+
+        $("f_save").onclick = async function () {
+          var kind = $("f_kind").value;
+          var name = $("f_name").value.trim();
+          if (!name) { showErr("กรุณากรอกชื่อเมนู"); return; }
+          var row = {
+            name: name,
+            category_id: $("f_cat").value ? Number($("f_cat").value) : null,
+            sort_order: parseInt($("f_sort").value, 10) || 0,
+            available: $("f_av").checked
+          };
+          if (kind === "drink") {
+            var pr = numVal(ov, "f_price", 99999);
+            if (pr === null) { showErr("กรุณากรอกราคาให้ถูกต้อง"); return; }
+            row.price = pr; row.price_s = null; row.price_m = null; row.price_l = null;
+            row.icon = ($("f_icon").value.trim() || "🥤").slice(0, 4);
+            row.description = "";
+          } else {
+            var s = numVal(ov, "f_s", 99999), m = numVal(ov, "f_m", 99999), l = numVal(ov, "f_l", 99999);
+            if (s === null || m === null || l === null) { showErr("กรุณากรอกราคา S, M, L ให้ครบและถูกต้อง"); return; }
+            row.price = null; row.price_s = s; row.price_m = m; row.price_l = l;
+            row.description = $("f_desc").value.trim().slice(0, 200);
+            if (kind === "pizza") {
+              var rec = items.filter(function (it) { return it.on; }).map(function (it) {
+                return [it.code, it.name, it.shape, it.pieces];
+              });
+              if (!rec.length) { showErr("กรุณาเลือกท็อปปิ้งในสูตรอย่างน้อย 1 อย่าง"); return; }
+              row.recipe = rec;
+            }
+          }
+
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          $("f_err").hidden = true;
+          var uploaded = null;
+          try {
+            var url = imgUrl;
+            if (newFile) { uploaded = await Admin.uploadImage(newFile, "products"); url = uploaded; }
+            row.image_url = url || null;
+            var r = p
+              ? await db.from("products").update(row).eq("id", p.id).select("id")
+              : await db.from("products").insert(Object.assign({ kind: kind }, row)).select("id");
+            if (r.error || !r.data || !r.data.length) throw new Error(r.error ? r.error.message : "ไม่มีสิทธิ์บันทึก");
+            if (p && p.image_url && p.image_url !== row.image_url) Admin.removeImage(p.image_url);
+            closeAll();
+            Admin.toast("บันทึกแล้ว");
+            load();
+          } catch (x) {
+            if (uploaded) Admin.removeImage(uploaded);
+            showErr(x.message || "บันทึกไม่สำเร็จ");
+            btn.disabled = false; btn.textContent = "บันทึก";
+          }
+        };
+      }
+
+      // ---------- ฟอร์มท็อปปิ้ง ----------
+      function openTop(id) {
+        var t = id ? tops.find(function (x) { return x.id === id; }) : null;
+        var groups = [];
+        tops.forEach(function (x) { if (groups.indexOf(x.category) === -1) groups.push(x.category); });
+        var shapeOpts = Object.keys(SHAPES).filter(function (k) { return SH[k]; }).map(function (k) {
+          return '<option value="' + k + '">' + SHAPES[k] + "</option>";
+        }).join("");
+
+        var ov = Admin.modal(
+          "<h2>" + (t ? "แก้ไขท็อปปิ้ง" : "เพิ่มท็อปปิ้ง") + "</h2>" +
+          '<label class="l">ชื่อท็อปปิ้ง</label><input id="f_name" maxlength="40" value="' + esc(t ? t.name : "") + '">' +
+          '<label class="l">กลุ่ม (ใช้จัดหมวดในหน้าแต่งพิซซ่า)</label><input id="f_grp" maxlength="40" list="grpList" value="' + esc(t ? t.category : "") + '">' +
+          '<datalist id="grpList">' + groups.map(function (g) { return '<option value="' + esc(g) + '">'; }).join("") + "</datalist>" +
+          '<label class="l">ราคาที่บวกเพิ่ม (บาท)</label><input id="f_price" type="number" min="0" step="1" inputmode="decimal" value="' + (t ? Number(t.price) : "") + '">' +
+          '<label class="l">จำนวนชิ้นที่โรยบนพิซซ่า (1-40)</label><input id="f_pcs" type="number" min="1" max="40" step="1" inputmode="numeric" value="' + (t ? t.pieces : 8) + '">' +
+          '<label class="l">รูปทรงที่แสดงบนพิซซ่า</label><div class="imgbox"><div class="pimg sq" id="f_prev"></div>' +
+          '<select id="f_shape" style="flex:1;min-width:150px">' + shapeOpts + "</select></div>" +
+          '<label class="l">ลำดับแสดง (เลขน้อยขึ้นก่อน)</label><input id="f_sort" type="number" step="1" value="' + (t ? t.sort_order : nextSort(tops)) + '">' +
+          '<label class="chk"><input type="checkbox" id="f_av"' + (!t || t.available ? " checked" : "") + "> เปิดขาย</label>" +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact">' + (t ? '<button class="btn danger" id="f_del">ลบท็อปปิ้ง</button>' : "") +
+          '<button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+
+        $("f_shape").value = t && SH[t.shape] ? t.shape : "moz";
+        function prev() { $("f_prev").innerHTML = '<svg viewBox="-20 -20 40 40">' + SH[$("f_shape").value] + "</svg>"; }
+        prev();
+        $("f_shape").onchange = prev;
+
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        $("f_cancel").onclick = function () { ov.close(); };
+
+        if ($("f_del")) {
+          $("f_del").onclick = async function () {
+            var used = prods.filter(function (p) {
+              return (p.recipe || []).some(function (x) { return x[0] === t.code; });
+            }).length;
+            var msg = "ลบท็อปปิ้ง \"" + t.name + "\" ใช่หรือไม่?" +
+              (used ? "\nมี " + used + " เมนูที่ใช้ท็อปปิ้งนี้ในสูตร (ยังแสดงบนพิซซ่าตามเดิม)" : "");
+            if (!confirm(msg)) return;
+            var r;
+            try { r = await db.from("toppings").delete().eq("id", t.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+            if (r.error || !r.data || !r.data.length) { showErr((r.error && r.error.message) || "ลบไม่สำเร็จ"); return; }
+            ov.close();
+            Admin.toast("ลบแล้ว");
+            load();
+          };
+        }
+
+        $("f_save").onclick = async function () {
+          var name = $("f_name").value.trim(), grp = $("f_grp").value.trim();
+          if (!name) { showErr("กรุณากรอกชื่อท็อปปิ้ง"); return; }
+          if (!grp) { showErr("กรุณากรอกกลุ่มของท็อปปิ้ง"); return; }
+          var price = numVal(ov, "f_price", 9999);
+          if (price === null) { showErr("กรุณากรอกราคาให้ถูกต้อง"); return; }
+          var pcs = parseInt($("f_pcs").value, 10);
+          if (!(pcs >= 1 && pcs <= 40)) { showErr("จำนวนชิ้นต้องอยู่ระหว่าง 1-40"); return; }
+          var row = {
+            name: name, category: grp, price: price, pieces: pcs, shape: $("f_shape").value,
+            sort_order: parseInt($("f_sort").value, 10) || 0, available: $("f_av").checked
+          };
+          if (!t) row.code = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          $("f_err").hidden = true;
+          var r;
+          try {
+            r = t ? await db.from("toppings").update(row).eq("id", t.id).select("id")
+                  : await db.from("toppings").insert(row).select("id");
+          } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data || !r.data.length) {
+            showErr((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก");
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          ov.close();
+          Admin.toast("บันทึกแล้ว");
+          load();
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

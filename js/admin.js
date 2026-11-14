@@ -34,8 +34,8 @@ Admin.SIDE = [
   { k: "categories", t: "หมวดหมู่", href: "categories.html", roles: ["admin"], ready: true },
   { k: "orders", t: "ออเดอร์", href: "orders.html", roles: ["admin", "cashier"], ready: true },
   { k: "stock", t: "วัตถุดิบ/สต็อก", href: "stock.html", roles: ["admin"], ready: true },
-  { k: "staff", t: "พนักงาน", href: "staff.html", roles: ["admin"], ready: false },
-  { k: "finance", t: "รายรับ-รายจ่าย", href: "finance.html", roles: ["admin"], ready: false },
+  { k: "staff", t: "พนักงาน", href: "staff.html", roles: ["admin"], ready: true },
+  { k: "finance", t: "รายรับ-รายจ่าย", href: "finance.html", roles: ["admin"], ready: true },
   { k: "reports", t: "รายงานยอดขาย", href: "reports.html", roles: ["admin"], ready: true },
   { k: "tables", t: "โต๊ะ/QR Code", href: "tables.html", roles: ["admin"], ready: true }
 ];

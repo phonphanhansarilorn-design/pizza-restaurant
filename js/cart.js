@@ -12,7 +12,12 @@ var CART_KEY = "cart";
     ".stepper button{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);font-size:18px;cursor:pointer}" +
     ".stepper b{min-width:20px;text-align:center}" +
     ".fly{position:fixed;z-index:300;pointer-events:none;filter:drop-shadow(0 10px 16px rgba(0,0,0,.6))}" +
-    ".fly svg{display:block;width:100%;height:auto;overflow:visible}";
+    ".fly svg{display:block;width:100%;height:auto;overflow:visible}" +
+    /* ปุ่มลอยดูสถานะออเดอร์ */
+    ".ordfab{position:fixed;right:14px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:70;display:flex;flex-direction:column;align-items:flex-start;padding:10px 16px;border-radius:999px;background:#fff;color:#1a120c;font:600 13px/1.25 'Prompt',sans-serif;text-decoration:none;box-shadow:0 8px 22px rgba(0,0,0,.5)}" +
+    ".ordfab small{font-weight:500;color:#8a5a3a;font-size:11px}" +
+    ".ordfab small:empty{display:none}" +
+    "body.has-bar .ordfab{bottom:calc(100px + env(safe-area-inset-bottom,0px))}";
   var s = document.createElement("style");
   s.textContent = css;
   document.head.appendChild(s);
@@ -64,6 +69,40 @@ function showTablePill() {
   var t = null;
   try { t = localStorage.getItem("table"); } catch (e) {}
   el.textContent = t ? "📍 โต๊ะ " + t : "";
+}
+
+// ----- ปุ่มลอย "ดูสถานะออเดอร์" (โผล่หลังจากลูกค้าสั่งอาหารแล้ว) -----
+var STATUS_TH = {
+  pending: "รอรับออเดอร์",
+  preparing: "กำลังเตรียมอาหาร",
+  cooking: "กำลังทำอาหาร",
+  done: "เสร็จเรียบร้อย",
+  cancelled: "ถูกยกเลิก"
+};
+
+async function showOrderFab() {
+  var last = null;
+  try { last = JSON.parse(localStorage.getItem("lastOrder")); } catch (e) {}
+  if (!last || !last.id || !last.token) return;
+  if (!/^\d+$/.test(String(last.id)) || !/^[0-9a-f-]{36}$/i.test(String(last.token))) return;
+
+  var a = document.getElementById("ordFab");
+  if (!a) {
+    a = document.createElement("a");
+    a.id = "ordFab";
+    a.className = "ordfab";
+    a.innerHTML = '🧾 ดูสถานะออเดอร์ #' + last.id + '<small id="ordFabSt"></small>';
+    document.body.appendChild(a);
+  }
+  a.href = "order-status.html?id=" + last.id + "&t=" + last.token;
+
+  // ดึงสถานะล่าสุดมาแสดงบนปุ่ม (ถ้าเชื่อมต่อได้)
+  if (typeof db === "undefined" || !db) return;
+  try {
+    var r = await db.rpc("get_order", { p_id: Number(last.id), p_token: last.token });
+    var st = document.getElementById("ordFabSt");
+    if (r && r.data && st) st.textContent = STATUS_TH[r.data.status] || "";
+  } catch (e) {}
 }
 
 // ----- เก็บหน้าตาพิซซ่า เพื่อนำไปโชว์ในตะกร้า -----
@@ -302,3 +341,8 @@ if (document.getElementById("cartList")) {
 
 updateCartBadge();
 showTablePill();
+showOrderFab();
+// กลับมาจากหน้าอื่นด้วยปุ่มย้อนกลับ: อัปเดตปุ่มและตัวเลขตะกร้าอีกครั้ง
+window.addEventListener("pageshow", function (e) {
+  if (e.persisted) { updateCartBadge(); showOrderFab(); }
+});

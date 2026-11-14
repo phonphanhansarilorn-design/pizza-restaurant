@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · หมวดหมู่</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "categories", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var cats = [], counts = {};
+      var KIND = { pizza: "พิซซ่า", drink: "เครื่องดื่ม", other: "อื่น ๆ" };
+      var ICON = { pizza: "🍕", drink: "🥤", other: "🍽️" };
+
+      async function load() {
+        var r;
+        try {
+          r = await Promise.all([
+            db.from("categories").select("*").order("sort_order").order("id"),
+            db.from("products").select("category_id")
+          ]);
+        } catch (e) { r = null; }
+        if (!r || r[0].error || r[1].error) {
+          Admin.setDb(false);
+          c.innerHTML = '<div class="panel empty">โหลดข้อมูลไม่สำเร็จ<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        cats = r[0].data;
+        counts = {};
+        r[1].data.forEach(function (p) { if (p.category_id) counts[p.category_id] = (counts[p.category_id] || 0) + 1; });
+        draw();
+      }
+
+      function draw() {
+        var h = '<div class="bar2"><div class="muted sm">ปิดหมวดไหน เมนูในหมวดนั้นจะถูกซ่อนจากลูกค้าทั้งหมวด</div>' +
+          '<button class="btn accent" data-add="1">+ เพิ่มหมวดหมู่</button></div>';
+        if (!cats.length) h += '<div class="panel empty">ยังไม่มีหมวดหมู่</div>';
+        cats.forEach(function (k) {
+          h += '<div class="prow' + (k.active ? "" : " off") + '"><div class="pimg">' + (ICON[k.kind] || "🍽️") + "</div>" +
+            '<div class="pinfo"><b>' + esc(k.name) + "</b>" +
+            '<div class="muted sm"><span class="kbadge">' + (KIND[k.kind] || k.kind) + "</span>" +
+            (counts[k.id] || 0) + " เมนู" + (k.active ? "" : " · ปิดอยู่") + "</div></div>" +
+            '<div class="pctl"><label class="sw"><input type="checkbox" data-tg="' + k.id + '"' + (k.active ? " checked" : "") + "><i></i></label>" +
+            '<button class="btn" data-edit="' + k.id + '">แก้ไข</button></div></div>';
+        });
+        c.innerHTML = h;
+      }
+
+      c.addEventListener("click", function (e) {
+        if (e.target.closest("[data-add]")) { openForm(null); return; }
+        var ed = e.target.closest("[data-edit]");
+        if (ed) openForm(Number(ed.getAttribute("data-edit")));
+      });
+
+      c.addEventListener("change", async function (e) {
+        var i = e.target.closest("input[data-tg]");
+        if (!i) return;
+        var id = Number(i.getAttribute("data-tg")), val = i.checked;
+        var r;
+        try { r = await db.from("categories").update({ active: val }).eq("id", id).select("id"); } catch (x) { r = { error: { message: "x" } }; }
+        if (r.error || !r.data || !r.data.length) { i.checked = !val; Admin.toast("บันทึกไม่สำเร็จ"); return; }
+        var k = cats.find(function (x) { return x.id === id; });
+        if (k) k.active = val;
+        i.closest(".prow").classList.toggle("off", !val);
+        Admin.toast(val ? "เปิดหมวดแล้ว" : "ปิดหมวดแล้ว");
+      });
+
+      function openForm(id) {
+        var k = id ? cats.find(function (x) { return x.id === id; }) : null;
+        var next = 1;
+        cats.forEach(function (x) { if (x.sort_order >= next) next = x.sort_order + 1; });
+
+        var ov = Admin.modal(
+          "<h2>" + (k ? "แก้ไขหมวดหมู่" : "เพิ่มหมวดหมู่") + "</h2>" +
+          '<label class="l">ชื่อหมวดหมู่</label><input id="f_name" maxlength="40" value="' + esc(k ? k.name : "") + '">' +
+          '<label class="l">ประเภท</label><select id="f_kind"><option value="pizza">พิซซ่า</option><option value="drink">เครื่องดื่ม</option><option value="other">อื่น ๆ</option></select>' +
+          '<label class="l">ลำดับแสดง (เลขน้อยขึ้นก่อน)</label><input id="f_sort" type="number" step="1" value="' + (k ? k.sort_order : next) + '">' +
+          '<label class="chk"><input type="checkbox" id="f_av"' + (!k || k.active ? " checked" : "") + "> เปิดใช้งาน</label>" +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact">' + (k ? '<button class="btn danger" id="f_del">ลบหมวด</button>' : "") +
+          '<button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        if (k) $("f_kind").value = k.kind;
+        $("f_cancel").onclick = function () { ov.close(); };
+
+        if ($("f_del")) {
+          $("f_del").onclick = async function () {
+            var n = counts[k.id] || 0;
+            if (!confirm("ลบหมวด \"" + k.name + "\" ใช่หรือไม่?" + (n ? "\nเมนู " + n + " รายการในหมวดนี้จะกลายเป็น \"ไม่ระบุหมวด\"" : ""))) return;
+            var r;
+            try { r = await db.from("categories").delete().eq("id", k.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+            if (r.error || !r.data || !r.data.length) { showErr((r.error && r.error.message) || "ลบไม่สำเร็จ"); return; }
+            ov.close();
+            Admin.toast("ลบแล้ว");
+            load();
+          };
+        }
+
+        $("f_save").onclick = async function () {
+          var name = $("f_name").value.trim();
+          if (!name) { showErr("กรุณากรอกชื่อหมวดหมู่"); return; }
+          var row = {
+            name: name, kind: $("f_kind").value,
+            sort_order: parseInt($("f_sort").value, 10) || 0, active: $("f_av").checked
+          };
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          var r;
+          try {
+            r = k ? await db.from("categories").update(row).eq("id", k.id).select("id")
+                  : await db.from("categories").insert(row).select("id");
+          } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data || !r.data.length) {
+            showErr((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก");
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          ov.close();
+          Admin.toast("บันทึกแล้ว");
+          load();
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

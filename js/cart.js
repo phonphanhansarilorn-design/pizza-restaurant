@@ -54,7 +54,7 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2200);
+  toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600);
 }
 
 // แสดงเลขโต๊ะใต้ชื่อหน้า (ถ้ามี element id="tablePill")
@@ -186,6 +186,75 @@ function drawPay() {
   document.getElementById("qrAmount").textContent = "ยอดชำระ " + cartTotal() + " บาท";
 }
 
+// ----- ส่งออเดอร์ไปที่ Supabase -----
+var sending = false;
+async function checkout() {
+  if (sending) return;
+  var tableInput = document.getElementById("tableInput");
+  var btn = document.getElementById("checkoutBtn");
+  var table = tableInput.value.trim();
+
+  if (!table) {
+    showToast("กรุณาระบุหมายเลขโต๊ะ");
+    tableInput.focus();
+    return;
+  }
+  if (!db) {
+    showToast("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้าอีกครั้ง");
+    return;
+  }
+
+  // แปลงตะกร้าเป็นข้อมูลที่ส่งให้ฐานข้อมูล (ไม่ส่งราคา ฐานข้อมูลคำนวณเอง)
+  var items = [];
+  var stale = false;
+  readCart().forEach(function (it) {
+    if (!it.pid) { stale = true; return; }
+    var o = { product_id: it.pid, qty: it.qty || 1 };
+    if (it.size) {
+      o.size = it.size;
+      o.sauce = it.sauce === "ซอสขาว" ? "B" : "R";
+    }
+    if (it.custom) {
+      o.toppings = (it.toppings || []).map(function (t) { return t.id; });
+    }
+    items.push(o);
+  });
+  if (stale) {
+    showToast("ตะกร้ามีรายการเก่า กรุณาลบแล้วเลือกใหม่");
+    return;
+  }
+
+  sending = true;
+  btn.disabled = true;
+  btn.textContent = "กำลังส่งออเดอร์…";
+
+  var res;
+  try {
+    res = await db.rpc("place_order", {
+      p_table: table,
+      p_payment: payMethod,
+      p_note: "",
+      p_items: items
+    });
+  } catch (e) {
+    res = { error: { message: "เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่" } };
+  }
+
+  sending = false;
+  btn.disabled = false;
+
+  if (res.error || !res.data) {
+    showToast((res.error && res.error.message) || "ส่งออเดอร์ไม่สำเร็จ");
+    renderCart();
+    return;
+  }
+
+  var o = res.data;
+  try { localStorage.setItem("lastOrder", JSON.stringify({ id: o.id, token: o.token })); } catch (e) {}
+  writeCart([]);
+  window.location.href = "order-status.html?id=" + o.id + "&t=" + o.token;
+}
+
 if (document.getElementById("cartList")) {
   // กดปุ่ม + − ลบ
   document.getElementById("cartList").onclick = function (e) {
@@ -195,7 +264,7 @@ if (document.getElementById("cartList")) {
     var act = b.getAttribute("data-act");
     var cart = readCart();
     if (!cart[i]) return;
-    if (act === "plus") cart[i].qty = (cart[i].qty || 1) + 1;
+    if (act === "plus") cart[i].qty = Math.min((cart[i].qty || 1) + 1, 20);
     if (act === "minus" && (cart[i].qty || 1) > 1) cart[i].qty -= 1;
     if (act === "del") cart.splice(i, 1);
     writeCart(cart);
@@ -227,17 +296,7 @@ if (document.getElementById("cartList")) {
     document.getElementById("qrMissing").hidden = false;
   };
 
-  // ปุ่มยืนยัน (ส่งออเดอร์จริงจะทำในขั้นตอนเชื่อม Supabase)
-  document.getElementById("checkoutBtn").onclick = function () {
-    if (!tableInput.value.trim()) {
-      showToast("กรุณาระบุหมายเลขโต๊ะ");
-      tableInput.focus();
-      return;
-    }
-    var how = payMethod === "qr" ? "สแกนจ่าย" : "เงินสด";
-    showToast("ชำระด้วย" + how + " · ระบบส่งออเดอร์จะเปิดใช้ในขั้นตอนเชื่อม Supabase");
-  };
-
+  document.getElementById("checkoutBtn").onclick = checkout;
   renderCart();
 }
 

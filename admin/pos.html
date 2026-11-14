@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>POS · คิดเงินหน้าร้าน</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+  <style>
+    body .wrap { padding-bottom: 120px; }
+    .posbar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--navy); color: #fff;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .posbar b { font-size: 22px; }
+    .posbar .btn { padding: 13px 22px; font-size: 16px; }
+    .kitem { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--line); }
+    .kitem:first-child { border-top: 0; }
+    .qs { display: flex; align-items: center; gap: 8px; }
+    .qs button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: #fff; font-size: 18px; cursor: pointer; }
+    .sum { display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; margin-top: 12px; }
+    .chips .cp { padding: 9px 14px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "pos", roles: ["admin", "cashier"], title: "POS · คิดเงินหน้าร้าน" }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var prods = [], tops = [], tables = [], cart = [], tab = "pizza", sizes = {};
+      var SZ = ["S", "M", "L"];
+
+      // ---------- ตัวช่วย ----------
+      function pr(p, s) { return Number(s === "S" ? p.price_s : s === "M" ? p.price_m : p.price_l); }
+      function find(id) { return prods.find(function (x) { return x.id === id; }); }
+      function pim(p, fb) { var u = p.image_url; return u && /^https:\/\//.test(u) ? '<img src="' + esc(u) + '" alt="">' : fb; }
+      function inCart(pid) { var n = 0; cart.forEach(function (it) { if (it.pid === pid) n += it.qty; }); return n; }
+      function total() { var s = 0; cart.forEach(function (it) { s += it.unit * it.qty; }); return s; }
+      function count() { var n = 0; cart.forEach(function (it) { n += it.qty; }); return n; }
+      function tblName(v) { return v === "TA" ? "สั่งกลับบ้าน" : "โต๊ะ " + v; }
+
+      // ---------- โหลดข้อมูล ----------
+      async function load() {
+        c.innerHTML = '<div class="panel empty">กำลังโหลด…</div>';
+        var r;
+        try {
+          r = await Promise.all([
+            db.from("products").select("id,kind,name,description,icon,image_url,price,price_s,price_m,price_l,sort_order").eq("available", true).order("sort_order"),
+            db.from("toppings").select("code,name,category,price,sort_order").eq("available", true).order("sort_order"),
+            db.from("tables").select("label").eq("active", true)
+          ]);
+        } catch (e) { r = null; }
+        if (!r || r[0].error || r[1].error || r[2].error) {
+          Admin.setDb(false);
+          c.innerHTML = '<div class="panel empty">โหลดเมนูไม่สำเร็จ<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        prods = r[0].data; tops = r[1].data;
+        tables = r[2].data.sort(function (a, b) { return a.label.localeCompare(b.label, "th", { numeric: true }); });
+        draw();
+      }
+
+      // ---------- วาดรายการเมนู ----------
+      function draw() {
+        var h = '<div class="tools"><button class="chip' + (tab === "pizza" ? " on" : "") + '" data-tab="pizza">🍕 พิซซ่า</button>' +
+          '<button class="chip' + (tab === "drink" ? " on" : "") + '" data-tab="drink">🥤 เครื่องดื่ม</button></div>';
+        var list = prods.filter(function (p) { return tab === "drink" ? p.kind === "drink" : p.kind !== "drink"; });
+        list.sort(function (a, b) { return (a.kind === "custom" ? 0 : 1) - (b.kind === "custom" ? 0 : 1); });
+        if (!list.length) h += '<div class="panel empty">ไม่มีรายการ</div>';
+        list.forEach(function (p) {
+          var n = inCart(p.id);
+          var badge = n ? ' <span class="kbadge">ในตะกร้า ' + n + "</span>" : "";
+          if (p.kind === "drink") {
+            h += '<div class="prow"><div class="pimg">' + pim(p, esc(p.icon || "🥤")) + '</div><div class="pinfo"><b>' + esc(p.name) + badge + "</b></div>" +
+              '<div class="pctl"><b>' + baht(p.price) + '</b><button class="btn accent" data-add="' + p.id + '">+ เพิ่ม</button></div></div>';
+          } else if (p.kind === "custom") {
+            h += '<div class="prow"><div class="pimg">' + pim(p, "🎨") + '</div><div class="pinfo"><b>' + esc(p.name) + badge + "</b>" +
+              '<div class="muted sm">เลือกท็อปปิ้งเอง · ฐาน S ' + pr(p, "S") + " / M " + pr(p, "M") + " / L " + pr(p, "L") + "</div></div>" +
+              '<div class="pctl"><button class="btn accent" data-custom="' + p.id + '">เลือกท็อปปิ้ง</button></div></div>';
+          } else {
+            var s = sizes[p.id] || "M";
+            h += '<div class="prow"><div class="pimg">' + pim(p, "🍕") + '</div><div class="pinfo"><b>' + esc(p.name) + badge + "</b>" +
+              '<div class="muted sm">' + esc(p.description || "") + "</div>" +
+              '<div class="tools" style="margin:8px 0 0">' + SZ.map(function (z) {
+                return '<button class="chip' + (z === s ? " on" : "") + '" data-sz="' + p.id + ":" + z + '">' + z + "</button>";
+              }).join("") + "</div></div>" +
+              '<div class="pctl"><b>' + baht(pr(p, s)) + '</b><button class="btn accent" data-add="' + p.id + '">+ เพิ่ม</button></div></div>';
+          }
+        });
+        c.innerHTML = h;
+        bar();
+      }
+
+      // ---------- แถบล่าง ----------
+      function bar() {
+        var b = document.getElementById("posbar");
+        if (!b) {
+          b = document.createElement("div");
+          b.id = "posbar";
+          b.className = "posbar";
+          b.innerHTML = '<div><div class="sm" id="pb_n" style="opacity:.8"></div><b id="pb_t"></b></div><button class="btn accent" id="pb_go">ชำระเงิน →</button>';
+          document.body.appendChild(b);
+          b.querySelector("#pb_go").onclick = openCheckout;
+        }
+        b.querySelector("#pb_n").textContent = count() ? count() + " รายการในตะกร้า" : "ยังไม่มีรายการ";
+        b.querySelector("#pb_t").textContent = baht(total());
+        b.querySelector("#pb_go").disabled = !count();
+      }
+
+      // ---------- เพิ่มรายการ ----------
+      function pushItem(it) {
+        if (!isFinite(it.unit)) { Admin.toast("เมนูนี้ยังไม่ได้ตั้งราคา"); return; }
+        var ex = cart.find(function (x) { return x.key === it.key; });
+        if (ex) {
+          if (ex.qty >= 20) { Admin.toast("สั่งได้สูงสุด 20 ต่อรายการ"); return; }
+          ex.qty++;
+        } else { it.qty = 1; cart.push(it); }
+        Admin.toast("เพิ่ม " + it.name);
+        draw();
+      }
+      function addItem(id) {
+        var p = find(id);
+        if (!p) return;
+        if (p.kind === "drink") {
+          pushItem({ key: "d:" + p.id, pid: p.id, kind: "drink", name: p.name, unit: Number(p.price) });
+        } else {
+          var s = sizes[p.id] || "M";
+          pushItem({ key: "p:" + p.id + ":" + s, pid: p.id, kind: "pizza", name: p.name, size: s, sauce: "R", unit: pr(p, s) });
+        }
+      }
+
+      c.addEventListener("click", function (e) {
+        var t = e.target.closest("[data-tab]");
+        if (t) { tab = t.getAttribute("data-tab"); draw(); return; }
+        var z = e.target.closest("[data-sz]");
+        if (z) { var a = z.getAttribute("data-sz").split(":"); sizes[a[0]] = a[1]; draw(); return; }
+        var ad = e.target.closest("[data-add]");
+        if (ad) { addItem(Number(ad.getAttribute("data-add"))); return; }
+        var cu = e.target.closest("[data-custom]");
+        if (cu) openCustom(find(Number(cu.getAttribute("data-custom"))));
+      });
+
+      // ---------- พิซซ่าแต่งเอง ----------
+      function openCustom(p) {
+        if (!p) return;
+        var size = "M", sauce = "R", sel = [];
+        var groups = [];
+        tops.forEach(function (t) { if (groups.indexOf(t.category) === -1) groups.push(t.category); });
+        var ov = Admin.modal(
+          "<h2>" + esc(p.name) + "</h2>" +
+          '<label class="l">ขนาด</label><div class="chips" id="c_sz"></div>' +
+          '<label class="l">ซอส</label><div class="chips" id="c_sc"></div>' +
+          '<div id="c_tops"></div>' +
+          '<div class="mact"><button class="btn" id="c_back">ยกเลิก</button><button class="btn accent" id="c_ok"></button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function tp(code) { return tops.find(function (t) { return t.code === code; }); }
+        function sum() {
+          var s = pr(p, size);
+          sel.forEach(function (code) { var t = tp(code); if (t) s += Number(t.price); });
+          return s;
+        }
+        function render() {
+          $("c_sz").innerHTML = SZ.map(function (z) {
+            return '<button type="button" class="cp' + (z === size ? " on" : "") + '" data-z="' + z + '">' + z + " · " + pr(p, z) + "฿</button>";
+          }).join("");
+          $("c_sc").innerHTML = [["R", "ซอสแดง"], ["B", "ซอสขาว"]].map(function (x) {
+            return '<button type="button" class="cp' + (sauce === x[0] ? " on" : "") + '" data-sc="' + x[0] + '">' + x[1] + "</button>";
+          }).join("");
+          $("c_tops").innerHTML = groups.map(function (g) {
+            return '<label class="l">' + esc(g) + '</label><div class="chips">' +
+              tops.filter(function (t) { return t.category === g; }).map(function (t) {
+                return '<button type="button" class="cp' + (sel.indexOf(t.code) > -1 ? " on" : "") + '" data-t="' + esc(t.code) + '">' +
+                  esc(t.name) + " +" + Number(t.price) + "</button>";
+              }).join("") + "</div>";
+          }).join("");
+          $("c_ok").textContent = "เพิ่มลงตะกร้า · " + baht(sum());
+        }
+        render();
+        ov.addEventListener("click", function (e) {
+          var z = e.target.closest("[data-z]");
+          if (z) { size = z.getAttribute("data-z"); render(); return; }
+          var s = e.target.closest("[data-sc]");
+          if (s) { sauce = s.getAttribute("data-sc"); render(); return; }
+          var t = e.target.closest("[data-t]");
+          if (t) {
+            var code = t.getAttribute("data-t"), i = sel.indexOf(code);
+            if (i === -1) sel.push(code); else sel.splice(i, 1);
+            render();
+          }
+        });
+        $("c_back").onclick = function () { ov.close(); };
+        $("c_ok").onclick = function () {
+          pushItem({
+            key: "c:" + Date.now() + Math.random().toString(36).slice(2, 6), pid: p.id, kind: "custom", name: p.name,
+            size: size, sauce: sauce, codes: sel.slice(),
+            tnames: sel.map(function (code) { var t = tp(code); return t ? t.name : code; }),
+            unit: sum()
+          });
+          ov.close();
+        };
+      }
+
+      // ---------- ชำระเงิน ----------
+      function openCheckout() {
+        if (!cart.length) { Admin.toast("ยังไม่มีรายการ"); return; }
+        var pay = "cash", busy = false;
+        var tblOpts = '<option value="TA">🛍️ สั่งกลับบ้าน</option>' + tables.map(function (t) {
+          return '<option value="' + esc(t.label) + '">โต๊ะ ' + esc(t.label) + "</option>";
+        }).join("");
+        var ov = Admin.modal(
+          "<h2>สรุปรายการ</h2><div id=\"k_items\"></div>" +
+          '<div class="sum"><span>ยอดรวม</span><span id="k_total"></span></div>' +
+          '<label class="l">โต๊ะ</label><select id="k_tbl">' + tblOpts + "</select>" +
+          '<label class="l">วิธีชำระเงิน</label><div class="chips" id="k_pay"></div>' +
+          '<label class="chk"><input type="checkbox" id="k_paid" checked> รับเงินแล้ว</label>' +
+          '<div id="k_cash"><label class="l">รับเงินมา (บาท)</label><input id="k_recv" type="number" min="0" step="1" inputmode="decimal">' +
+          '<div id="k_change" style="margin-top:6px;font-weight:600"></div></div>' +
+          '<label class="l">หมายเหตุถึงครัว</label><input id="k_note" maxlength="200">' +
+          '<div class="ferr" id="k_err" hidden></div>' +
+          '<div class="mact"><button class="btn" id="k_back">กลับ</button><button class="btn accent" id="k_ok"></button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("k_err"); e.textContent = m; e.hidden = false; }
+
+        var saved = store("posTable");
+        if (saved && Array.prototype.some.call($("k_tbl").options, function (o) { return o.value === saved; })) $("k_tbl").value = saved;
+        $("k_tbl").onchange = function () { store("posTable", this.value); };
+
+        function render() {
+          $("k_items").innerHTML = cart.map(function (it, i) {
+            var d = (it.size || "") + (it.sauce === "B" ? " · ซอสขาว" : "") + (it.tnames && it.tnames.length ? " · " + it.tnames.join(", ") : "");
+            return '<div class="kitem"><div><b>' + esc(it.name) + '</b><div class="muted sm">' + esc(d) + '</div><div class="sm">' + baht(it.unit) +
+              '</div></div><div class="qs"><button data-q="' + i + ':-1">−</button><b>' + it.qty + '</b><button data-q="' + i + ':1">+</button></div></div>';
+          }).join("");
+          $("k_total").textContent = baht(total());
+          $("k_ok").textContent = "ยืนยันสั่ง · " + baht(total());
+          $("k_pay").innerHTML = [["cash", "💵 เงินสด"], ["qr", "📱 สแกนจ่าย"]].map(function (x) {
+            return '<button type="button" class="cp' + (pay === x[0] ? " on" : "") + '" data-pay="' + x[0] + '">' + x[1] + "</button>";
+          }).join("");
+          $("k_cash").hidden = !(pay === "cash" && $("k_paid").checked);
+          var recv = $("k_recv").value, ch = $("k_change");
+          if (recv === "") ch.textContent = "";
+          else if (Number(recv) >= total()) { ch.textContent = "เงินทอน " + baht(Number(recv) - total()); ch.style.color = "#15803d"; }
+          else { ch.textContent = "ยังขาด " + baht(total() - Number(recv)); ch.style.color = "#dc2626"; }
+        }
+        render();
+
+        ov.addEventListener("click", function (e) {
+          var q = e.target.closest("[data-q]");
+          if (q) {
+            var a = q.getAttribute("data-q").split(":"), i = Number(a[0]), d = Number(a[1]);
+            var it = cart[i];
+            if (!it) return;
+            it.qty = Math.min(it.qty + d, 20);
+            if (it.qty <= 0) cart.splice(i, 1);
+            draw();
+            if (!cart.length) { ov.close(); return; }
+            render();
+            return;
+          }
+          var p = e.target.closest("[data-pay]");
+          if (p) { pay = p.getAttribute("data-pay"); render(); }
+        });
+        $("k_paid").onchange = render;
+        $("k_recv").oninput = render;
+        $("k_back").onclick = function () { ov.close(); };
+
+        $("k_ok").onclick = async function () {
+          if (busy) return;
+          $("k_err").hidden = true;
+          var tbl = $("k_tbl").value, paid = $("k_paid").checked, recv = $("k_recv").value;
+          if (pay === "cash" && paid && recv !== "" && Number(recv) < total()) { showErr("รับเงินมาไม่ครบยอด"); return; }
+          busy = true;
+          var btn = $("k_ok");
+          btn.disabled = true; btn.textContent = "กำลังส่งเข้าครัว…";
+
+          var items = cart.map(function (it) {
+            var o = { product_id: it.pid, qty: it.qty };
+            if (it.size) { o.size = it.size; o.sauce = it.sauce; }
+            if (it.kind === "custom") o.toppings = it.codes;
+            return o;
+          });
+          var r;
+          try {
+            r = await db.rpc("place_order", { p_table: tbl, p_payment: pay, p_note: $("k_note").value.trim(), p_items: items });
+          } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data) {
+            showErr((r.error && r.error.message) || "ส่งออเดอร์ไม่สำเร็จ");
+            busy = false; btn.disabled = false; render();
+            return;
+          }
+          var o = r.data;
+          var patched = await Admin.updateOrder(o.id, { status: "preparing", payment_status: paid ? "paid" : "unpaid" });
+          cart = [];
+          ov.close();
+          draw();
+
+          var changeTxt = "";
+          if (pay === "cash" && paid && recv !== "" && Number(recv) >= Number(o.total)) {
+            changeTxt = '<div style="font-size:22px;font-weight:700;color:#15803d;margin-top:10px">เงินทอน ' + baht(Number(recv) - Number(o.total)) + "</div>";
+          }
+          var ov2 = Admin.modal(
+            "<h2>✅ ส่งเข้าครัวแล้ว</h2>" +
+            '<p style="font-size:38px;font-weight:700;margin:8px 0">#' + o.id + "</p>" +
+            '<div class="muted">' + esc(tblName(tbl)) + " · " + baht(o.total) + " · " + (paid ? "รับเงินแล้ว" : "ยังไม่รับเงิน") + "</div>" + changeTxt +
+            (patched ? "" : '<div class="ferr">สร้างออเดอร์แล้ว แต่อัปเดตสถานะไม่สำเร็จ กรุณาตรวจที่หน้าออเดอร์</div>') +
+            '<div class="mact"><button class="btn primary" id="s_ok">ออเดอร์ใหม่</button></div>'
+          );
+          ov2.querySelector("#s_ok").onclick = function () { ov2.close(); };
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

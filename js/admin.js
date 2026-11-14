@@ -33,7 +33,7 @@ Admin.SIDE = [
   { k: "products", t: "จัดการเมนู", href: "products.html", roles: ["admin"], ready: true },
   { k: "categories", t: "หมวดหมู่", href: "categories.html", roles: ["admin"], ready: true },
   { k: "orders", t: "ออเดอร์", href: "orders.html", roles: ["admin", "cashier"], ready: true },
-  { k: "stock", t: "วัตถุดิบ/สต็อก", href: "stock.html", roles: ["admin"], ready: false },
+  { k: "stock", t: "วัตถุดิบ/สต็อก", href: "stock.html", roles: ["admin"], ready: true },
   { k: "staff", t: "พนักงาน", href: "staff.html", roles: ["admin"], ready: false },
   { k: "finance", t: "รายรับ-รายจ่าย", href: "finance.html", roles: ["admin"], ready: false },
   { k: "reports", t: "รายงานยอดขาย", href: "reports.html", roles: ["admin"], ready: true },
@@ -191,7 +191,7 @@ Admin.removeImage = async function (url) {
 };
 
 // ----- สร้างโครงหน้าหลังบ้าน แล้วคืนค่า true เมื่อพร้อม -----
-// opt: { section: "admin" | "kitchen", side: "dashboard", roles: ["admin"], title: "..." }
+// opt: { section: "admin" | "kitchen" | "pos", side: "dashboard", roles: ["admin"], title: "..." }
 Admin.init = async function (opt) {
   opt = opt || {};
   var root = document.getElementById("root");
@@ -231,7 +231,7 @@ Admin.init = async function (opt) {
   var nav = [
     { k: "shop", t: "หน้าร้าน", href: "../index.html", ok: true },
     { k: "kitchen", t: "ครัว", href: "kitchen.html", ok: true },
-    { k: "pos", t: "POS", href: "pos.html", ok: false, show: role !== "kitchen" },
+    { k: "pos", t: "POS", href: "pos.html", ok: true, show: role !== "kitchen" },
     { k: "admin", t: role === "admin" ? "แอดมิน" : "ออเดอร์", href: Admin.HOME[role], ok: true, show: role !== "kitchen" }
   ];
   var navHtml = "";

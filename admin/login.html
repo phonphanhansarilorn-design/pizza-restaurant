@@ -7,6 +7,15 @@
   <title>เข้าสู่ระบบหลังบ้าน</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="../css/admin.css">
+  <style>
+    .pwrow { position: relative; }
+    .pwrow input { padding-right: 56px; }
+    .eye {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: 44px; height: 44px; border: 0; background: none; font-size: 20px; cursor: pointer;
+    }
+    .dbg { display: block; margin-top: 6px; font-size: 12px; opacity: .8; word-break: break-word; }
+  </style>
 </head>
 <body>
   <div class="lg">
@@ -19,7 +28,10 @@
         <label for="em">ชื่อผู้ใช้ หรือ อีเมล</label>
         <input id="em" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required placeholder="admin">
         <label for="pw">รหัสผ่าน</label>
-        <input id="pw" type="password" autocomplete="current-password" required>
+        <div class="pwrow">
+          <input id="pw" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          <button class="eye" id="eye" type="button" aria-label="แสดงรหัสผ่าน">👁</button>
+        </div>
         <div class="err" id="err" hidden></div>
         <button class="btn primary" id="go" type="submit">เข้าสู่ระบบ</button>
       </form>
@@ -32,36 +44,51 @@
   <script>
     var HOME = { admin: "dashboard.html", cashier: "orders.html", kitchen: "kitchen.html" };
     var errEl = document.getElementById("err");
-    function showErr(m) { errEl.textContent = m; errEl.hidden = false; }
+    function showErr(m, detail) {
+      errEl.textContent = m;
+      if (detail) {
+        var d = document.createElement("span");
+        d.className = "dbg";
+        d.textContent = "รายละเอียด: " + detail;
+        errEl.appendChild(d);
+      }
+      errEl.hidden = false;
+    }
 
-    // พิมพ์แค่ชื่อ เช่น admin ระบบจะต่อท้ายให้เป็น admin@pizzahouse.com
+    // ปุ่มดูรหัสผ่านที่พิมพ์
+    document.getElementById("eye").onclick = function () {
+      var pw = document.getElementById("pw");
+      pw.type = pw.type === "password" ? "text" : "password";
+    };
+
+    // พิมพ์แค่ชื่อ เช่น admin ระบบจะต่อท้ายให้เป็น admin@pizzahouse.com (รับคำว่า "แอดมิน" ภาษาไทยด้วย)
     function toEmail(v) {
-      v = String(v || "").trim().toLowerCase();
+      v = String(v || "").trim().toLowerCase().replace(/แอดมิน/g, "admin");
       return v.indexOf("@") === -1 ? v + "@pizzahouse.com" : v;
     }
 
     // ตรวจสิทธิ์แล้วพาไปหน้าแรกของตำแหน่งนั้น (ถ้าไม่มีสิทธิ์ ออกจากระบบ)
     async function goHome(uid) {
       var p = await db.from("profiles").select("role,active").eq("id", uid).maybeSingle();
+      if (p.error) return "โหลดสิทธิ์ไม่สำเร็จ: " + p.error.message;
       if (p.data && p.data.active && HOME[p.data.role]) {
         location.replace(HOME[p.data.role]);
-        return true;
+        return "";
       }
       await db.auth.signOut();
-      return false;
+      return p.data ? "บัญชีนี้มีสิทธิ์เป็น \"" + p.data.role + "\" ซึ่งยังเข้าหลังบ้านไม่ได้" : "ไม่พบข้อมูลสิทธิ์ของบัญชีนี้ในตาราง profiles";
     }
 
     (async function () {
-      if (!db) { showErr("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้า"); return; }
+      if (!db) { showErr("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้า", "ไม่พบตัวเชื่อม Supabase (ตรวจไฟล์ js/supabase.js)"); return; }
       if (new URLSearchParams(location.search).get("e") === "noaccess") {
         showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน กรุณาติดต่อผู้ดูแลระบบ");
       }
       try {
         var s = await db.auth.getSession();
         if (s.data && s.data.session) {
-          if (!(await goHome(s.data.session.user.id))) {
-            showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน กรุณาติดต่อผู้ดูแลระบบ");
-          }
+          var why = await goHome(s.data.session.user.id);
+          if (why) showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน", why);
         }
       } catch (e) {}
     })();
@@ -69,32 +96,34 @@
     document.getElementById("f").onsubmit = async function (e) {
       e.preventDefault();
       errEl.hidden = true;
-      if (!db) { showErr("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้า"); return; }
+      if (!db) { showErr("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้า", "ไม่พบตัวเชื่อม Supabase (ตรวจไฟล์ js/supabase.js)"); return; }
       var btn = document.getElementById("go");
       btn.disabled = true;
       btn.textContent = "กำลังเข้าสู่ระบบ…";
 
+      var email = toEmail(document.getElementById("em").value);
       var r;
       try {
-        r = await db.auth.signInWithPassword({
-          email: toEmail(document.getElementById("em").value),
-          password: document.getElementById("pw").value
-        });
+        r = await db.auth.signInWithPassword({ email: email, password: document.getElementById("pw").value });
       } catch (x) {
-        r = { error: { message: "network" } };
+        r = { error: { message: "network: " + (x && x.message) } };
       }
 
       if (r.error || !r.data || !r.data.user) {
         var m = (r.error && r.error.message) || "";
-        showErr(/invalid/i.test(m) ? "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
+        var detail = "อีเมลที่ส่ง = " + email + " · " + m + (r.error && r.error.status ? " (" + r.error.status + ")" : "");
+        showErr(/invalid login/i.test(m) ? "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
+          : /api key|apikey|jwt/i.test(m) ? "กุญแจเชื่อมต่อ Supabase ไม่ถูกต้อง (ตรวจไฟล์ js/supabase.js)"
           : /rate|too many/i.test(m) ? "ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่"
-          : "เข้าสู่ระบบไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+          : /disabled|not allowed/i.test(m) ? "การเข้าสู่ระบบด้วยอีเมลถูกปิดอยู่ใน Supabase"
+          : "เข้าสู่ระบบไม่สำเร็จ", detail);
         btn.disabled = false;
         btn.textContent = "เข้าสู่ระบบ";
         return;
       }
-      if (!(await goHome(r.data.user.id))) {
-        showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน กรุณาติดต่อผู้ดูแลระบบ");
+      var why = await goHome(r.data.user.id);
+      if (why) {
+        showErr("เข้าสู่ระบบได้ แต่ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน", why);
         btn.disabled = false;
         btn.textContent = "เข้าสู่ระบบ";
       }

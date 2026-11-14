@@ -1,39 +1,12 @@
-// ===== ข้อมูลตัวอย่าง (ภายหลังจะดึงจาก Supabase และแก้ไขได้จาก Admin) =====
+// ===== ข้อมูลพิซซ่าแต่งเอง (ดึงจาก Supabase ราคาแก้ได้จากหลังบ้าน) =====
 var SIZES = [
-  { c: "S", l: "เล็ก", p: 159 },
-  { c: "M", l: "กลาง", p: 219 },
-  { c: "L", l: "ใหญ่", p: 279 }
+  { c: "S", l: "เล็ก", p: 0 },
+  { c: "M", l: "กลาง", p: 0 },
+  { c: "L", l: "ใหญ่", p: 0 }
 ];
-var CATS = ["ชีส", "เนื้อสัตว์และอาหารทะเล", "ผักและผลไม้", "สมุนไพร", "ซอสและครีม"];
-// cat = ลำดับหมวด (เริ่มที่ 0), p = ราคา, k = จำนวนชิ้นบนพิซซ่า, s = ชื่อรูปทรง
-var T = [
-  { id: "cheese", n: "มอสซาเรลลา", cat: 0, p: 20, k: 9, s: "moz" },
-  { id: "buf", n: "มอสซาเรลลาควาย", cat: 0, p: 40, k: 6, s: "buf" },
-  { id: "scam", n: "สกาโมร์ซา", cat: 0, p: 25, k: 7, s: "scam" },
-  { id: "gorg", n: "กอร์กอนโซลา", cat: 0, p: 30, k: 8, s: "gorg" },
-  { id: "parm", n: "พาร์เมซาน", cat: 0, p: 20, k: 10, s: "parm" },
-  { id: "ric", n: "ริคอตต้า", cat: 0, p: 25, k: 7, s: "ric" },
-  { id: "pepperoni", n: "เปปเปอโรนี", cat: 1, p: 30, k: 12, s: "pep" },
-  { id: "ham", n: "แฮม", cat: 1, p: 25, k: 8, s: "ham" },
-  { id: "bacon", n: "เบคอน", cat: 1, p: 25, k: 8, s: "bacon" },
-  { id: "sausage", n: "ไส้กรอก", cat: 1, p: 20, k: 9, s: "sau" },
-  { id: "tuna", n: "ทูน่า", cat: 1, p: 25, k: 8, s: "tuna" },
-  { id: "anch", n: "แอนโชวี่", cat: 1, p: 30, k: 8, s: "anch" },
-  { id: "shr", n: "กุ้ง", cat: 1, p: 45, k: 7, s: "shr" },
-  { id: "mushroom", n: "เห็ด", cat: 2, p: 15, k: 9, s: "mush" },
-  { id: "pineapple", n: "สับปะรด", cat: 2, p: 15, k: 8, s: "pine" },
-  { id: "oli", n: "มะกอกดำ", cat: 2, p: 15, k: 12, s: "oli" },
-  { id: "bell", n: "พริกหวาน", cat: 2, p: 15, k: 8, s: "bell" },
-  { id: "onion", n: "หอมแดง", cat: 2, p: 10, k: 9, s: "onion" },
-  { id: "tom", n: "มะเขือเทศ", cat: 2, p: 10, k: 7, s: "tom" },
-  { id: "corn", n: "ข้าวโพด", cat: 2, p: 10, k: 14, s: "corn" },
-  { id: "jal", n: "ฮาลาปิโน", cat: 2, p: 15, k: 10, s: "jal" },
-  { id: "basil", n: "โหระพา", cat: 3, p: 10, k: 7, s: "basil" },
-  { id: "oreg", n: "ออริกาโน", cat: 3, p: 5, k: 24, s: "oreg" },
-  { id: "garl", n: "กระเทียม", cat: 3, p: 10, k: 9, s: "garl" },
-  { id: "pest", n: "เพสโต้", cat: 4, p: 20, k: 4, s: "pest" },
-  { id: "chil", n: "น้ำมันพริก", cat: 4, p: 15, k: 4, s: "chil" }
-];
+var CATS = [];      // รายชื่อหมวดท็อปปิ้ง (โหลดจากฐานข้อมูล)
+var T = [];         // รายการท็อปปิ้ง: { id (รหัส), n (ชื่อ), cat (ลำดับหมวด), p (ราคา), k (จำนวนชิ้น), s (รูปทรง) }
+var customPid = null; // รหัสสินค้า "พิซซ่าแต่งเอง" ในฐานข้อมูล
 
 // ===== สถานะปัจจุบัน =====
 var size = "M";
@@ -45,8 +18,50 @@ function byId(id) { return T.find(function (t) { return t.id === id; }); }
 function curSize() { return SIZES.find(function (s) { return s.c === size; }); }
 function total() {
   var sum = curSize().p;
-  sel.forEach(function (id) { sum += byId(id).p; });
+  sel.forEach(function (id) { var t = byId(id); if (t) sum += t.p; });
   return sum;
+}
+
+// ===== โหลดข้อมูลจากฐานข้อมูล =====
+async function loadShop() {
+  var m = document.getElementById("menu");
+  m.innerHTML = '<p style="text-align:center;color:var(--muted);padding:30px 0">กำลังโหลดท็อปปิ้ง…</p>';
+
+  function fail() {
+    m.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--muted)">โหลดท็อปปิ้งไม่สำเร็จ<br>' +
+      '<button class="ghost" onclick="loadShop()">ลองใหม่</button></div>';
+  }
+  if (!db) { fail(); return; }
+
+  var a, b;
+  try {
+    a = await db.from("toppings").select("code,name,category,price,pieces,shape,sort_order").order("sort_order");
+    b = await db.from("products").select("id,price_s,price_m,price_l").eq("kind", "custom").limit(1);
+  } catch (e) { fail(); return; }
+  if (a.error || !a.data) { fail(); return; }
+
+  CATS = [];
+  T = [];
+  a.data.forEach(function (r) {
+    if (!SH[r.shape]) return;   // ข้ามท็อปปิ้งที่ยังไม่มีรูปทรง
+    var ci = CATS.indexOf(r.category);
+    if (ci === -1) { CATS.push(r.category); ci = CATS.length - 1; }
+    T.push({ id: r.code, n: r.name, cat: ci, p: Number(r.price), k: r.pieces, s: r.shape });
+  });
+
+  if (b.data && b.data[0]) {
+    customPid = b.data[0].id;
+    SIZES[0].p = Number(b.data[0].price_s);
+    SIZES[1].p = Number(b.data[0].price_m);
+    SIZES[2].p = Number(b.data[0].price_l);
+  } else {
+    customPid = null;
+    showToast("ขณะนี้ปิดรับพิซซ่าแต่งเอง");
+  }
+
+  renderSeg();
+  renderMenu();
+  update();
 }
 
 // ===== ปุ่มขนาด =====
@@ -80,7 +95,7 @@ function renderMenu() {
     T.filter(function (t) { return t.cat === ci; }).forEach(function (t) {
       var b = document.createElement("button");
       b.className = "card" + (sel.indexOf(t.id) > -1 ? " on" : "");
-      b.innerHTML = '<svg viewBox="-20 -20 40 40">' + SH[t.s] + "</svg>" + t.n + "<small>+" + t.p + " บาท</small>";
+      b.innerHTML = '<svg viewBox="-20 -20 40 40">' + SH[t.s] + "</svg>" + esc(t.n) + "<small>+" + t.p + " บาท</small>";
       b.onclick = function () { toggle(t); };
       g.appendChild(b);
     });
@@ -126,6 +141,10 @@ document.getElementById("sauceChip").onclick = function () {
 
 // ===== เพิ่มลงตะกร้า: อบ -> พิซซ่าลอยเข้าตะกร้า -> เหลือพิซซ่าหน้าว่าง =====
 document.getElementById("addBtn").onclick = function () {
+  if (!customPid) {
+    showToast("ยังใช้งานพิซซ่าแต่งเองไม่ได้ ลองรีเฟรชหน้านี้");
+    return;
+  }
   pizza.bake(addDone);
 };
 
@@ -138,6 +157,8 @@ function addDone() {
   var cart = readCart();
   cart.push({
     key: "c:" + Date.now(),
+    pid: customPid,
+    custom: true,
     name: "พิซซ่าแต่งเอง",
     size: s.c,
     sauce: sauce === "R" ? "ซอสแดง" : "ซอสขาว",
@@ -207,5 +228,5 @@ function resetPizza() {
 
 // ===== เริ่มทำงาน =====
 renderSeg();
-renderMenu();
 update();
+loadShop();

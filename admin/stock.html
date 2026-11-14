@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · วัตถุดิบ/สต็อก</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+  <style>
+    .srch { flex: 1; min-width: 140px; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; font: 500 14px "Prompt"; }
+    .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+    .stats3 .stat b { font-size: 28px; }
+    .pctl { flex-wrap: wrap; }
+    .pctl .btn { padding: 9px 12px; font-size: 13px; }
+    .hrow { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--line); font-size: 14px; }
+    .hrow:first-of-type { border-top: 0; }
+    .up { color: #15803d; font-weight: 700; }
+    .down { color: #dc2626; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "stock", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var list = [], filter = "all", q = "";
+      var REASON = { in: "รับเข้า", use: "ใช้ในครัว", waste: "ของเสีย/หมดอายุ", other: "อื่น ๆ", count: "นับสต็อก" };
+
+      function fmt(n) { return Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
+      function st(i) { var s = Number(i.stock), m = Number(i.min_stock); return s <= 0 ? "out" : s <= m ? "low" : "ok"; }
+      function find(id) { return list.find(function (x) { return x.id === id; }); }
+
+      // โครงหน้า (ช่องค้นหาไม่ถูกวาดใหม่ จะได้พิมพ์ต่อเนื่อง)
+      c.innerHTML = '<div id="stStats"></div>' +
+        '<div class="bar2"><div class="tools" style="margin:0;flex:1"><span id="stChips" style="display:contents"></span>' +
+        '<input class="srch" id="stQ" placeholder="ค้นหาวัตถุดิบ"></div><button class="btn accent" id="stAdd">+ เพิ่มวัตถุดิบ</button></div>' +
+        '<div id="stList"><div class="panel empty">กำลังโหลด…</div></div>';
+
+      async function load() {
+        var r;
+        try { r = await db.from("ingredients").select("*").order("name"); } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          document.getElementById("stList").innerHTML = '<div class="panel empty">โหลดข้อมูลไม่สำเร็จ<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        list = r.data;
+        draw();
+      }
+
+      function draw() {
+        var act = list.filter(function (i) { return i.active; });
+        var low = act.filter(function (i) { return st(i) === "low"; }).length;
+        var out = act.filter(function (i) { return st(i) === "out"; }).length;
+        document.getElementById("stStats").innerHTML =
+          '<div class="stats3"><div class="stat"><span>วัตถุดิบทั้งหมด</span><b>' + act.length + "</b></div>" +
+          '<div class="stat"><span>ใกล้หมด</span><b style="color:#c2410c">' + low + "</b></div>" +
+          '<div class="stat"><span>หมดแล้ว</span><b style="color:#dc2626">' + out + "</b></div></div>";
+        document.getElementById("stChips").innerHTML = [["all", "ทั้งหมด"], ["low", "ใกล้หมด"], ["out", "หมด"]].map(function (f) {
+          return '<button class="chip' + (filter === f[0] ? " on" : "") + '" data-f="' + f[0] + '">' + f[1] + "</button>";
+        }).join("");
+
+        var rows = list.filter(function (i) {
+          if (q && i.name.toLowerCase().indexOf(q) === -1) return false;
+          if (filter === "low") return st(i) === "low";
+          if (filter === "out") return st(i) === "out";
+          return true;
+        });
+        document.getElementById("stList").innerHTML = rows.length ? rows.map(row).join("") : '<div class="panel empty">ไม่พบรายการ</div>';
+      }
+
+      function row(i) {
+        var s = st(i);
+        var badge = s === "out" ? '<span class="badge st-cancelled">หมด</span>' : s === "low" ? '<span class="badge st-pending">ใกล้หมด</span>' : "";
+        return '<div class="prow' + (i.active ? "" : " off") + '"><div class="pinfo"><b>' + esc(i.name) + " " + badge + "</b>" +
+          '<div class="muted sm">เหลือ <b style="color:var(--ink)">' + fmt(i.stock) + "</b> " + esc(i.unit) + " · ขั้นต่ำ " + fmt(i.min_stock) + (i.active ? "" : " · ปิดใช้งาน") + "</div></div>" +
+          '<div class="pctl"><button class="btn" data-adj="in:' + i.id + '">+ รับเข้า</button><button class="btn" data-adj="out:' + i.id + '">− ใช้ไป</button>' +
+          '<button class="btn" data-hist="' + i.id + '">ประวัติ</button><button class="btn" data-edit="' + i.id + '">แก้ไข</button></div></div>';
+      }
+
+      document.getElementById("stQ").oninput = function () { q = this.value.trim().toLowerCase(); draw(); };
+      document.getElementById("stAdd").onclick = function () { openForm(null); };
+      c.addEventListener("click", function (e) {
+        var f = e.target.closest("[data-f]");
+        if (f) { filter = f.getAttribute("data-f"); draw(); return; }
+        var a = e.target.closest("[data-adj]");
+        if (a) { var p = a.getAttribute("data-adj").split(":"); openAdjust(Number(p[1]), p[0]); return; }
+        var h = e.target.closest("[data-hist]");
+        if (h) { openHist(Number(h.getAttribute("data-hist"))); return; }
+        var ed = e.target.closest("[data-edit]");
+        if (ed) openForm(Number(ed.getAttribute("data-edit")));
+      });
+
+      // ---------- รับเข้า / ใช้ไป / นับสต็อกใหม่ ----------
+      function openAdjust(id, mode) {
+        var it = find(id);
+        if (!it) return;
+        var ov = Admin.modal(
+          "<h2>" + esc(it.name) + "</h2>" +
+          '<div class="muted sm">ตอนนี้เหลือ ' + fmt(it.stock) + " " + esc(it.unit) + "</div>" +
+          '<div class="chips" id="a_m" style="margin-top:12px"></div>' +
+          '<label class="l" id="a_lab"></label><input id="a_amt" type="number" min="0" step="any" inputmode="decimal">' +
+          '<div id="a_rw"><label class="l">เหตุผล</label><select id="a_reason"><option value="use">ใช้ในครัว</option>' +
+          '<option value="waste">ของเสีย/หมดอายุ</option><option value="other">อื่น ๆ</option></select></div>' +
+          '<label class="l">หมายเหตุ (ถ้ามี)</label><input id="a_note" maxlength="200">' +
+          '<div class="ferr" id="a_err" hidden></div>' +
+          '<div class="mact"><button class="btn" id="a_cancel">ยกเลิก</button><button class="btn primary" id="a_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("a_err"); e.textContent = m; e.hidden = false; }
+        function sync() {
+          $("a_m").innerHTML = [["in", "+ รับเข้า"], ["out", "− ใช้ไป"], ["count", "นับสต็อกใหม่"]].map(function (x) {
+            return '<button type="button" class="cp' + (mode === x[0] ? " on" : "") + '" data-m="' + x[0] + '">' + x[1] + "</button>";
+          }).join("");
+          $("a_lab").textContent = mode === "count" ? "ยอดคงเหลือจริง (" + it.unit + ")" : "จำนวน (" + it.unit + ")";
+          $("a_rw").hidden = mode !== "out";
+        }
+        sync();
+        $("a_m").onclick = function (e) {
+          var b = e.target.closest("[data-m]");
+          if (b) { mode = b.getAttribute("data-m"); sync(); }
+        };
+        $("a_cancel").onclick = function () { ov.close(); };
+        $("a_save").onclick = async function () {
+          var raw = $("a_amt").value, amt = Number(raw);
+          if (raw === "" || !isFinite(amt) || amt < 0 || (mode !== "count" && amt <= 0)) { showErr("กรุณากรอกจำนวนให้ถูกต้อง"); return; }
+          if (mode === "out" && amt > Number(it.stock)) { showErr("สต็อกไม่พอ (เหลือ " + fmt(it.stock) + " " + it.unit + ")"); return; }
+          var delta = mode === "in" ? amt : mode === "out" ? -amt : amt;
+          var reason = mode === "in" ? "in" : mode === "out" ? $("a_reason").value : "count";
+          var btn = $("a_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          var r;
+          try { r = await db.rpc("adjust_stock", { p_id: id, p_delta: delta, p_reason: reason, p_note: $("a_note").value.trim() }); }
+          catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error) {
+            var m = r.error.message || "";
+            showErr(/function|schema cache/i.test(m) ? "ยังไม่ได้รัน SQL ส่วนที่ 7" : m);
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          ov.close(); Admin.toast("บันทึกแล้ว"); load();
+        };
+      }
+
+      // ---------- ประวัติ ----------
+      async function openHist(id) {
+        var it = find(id);
+        if (!it) return;
+        var ov = Admin.modal("<h2>ประวัติ · " + esc(it.name) + '</h2><div id="h_body"><div class="empty">กำลังโหลด…</div></div>' +
+          '<div class="mact"><button class="btn primary" id="h_close">ปิด</button></div>');
+        ov.querySelector("#h_close").onclick = function () { ov.close(); };
+        var r;
+        try {
+          r = await db.from("stock_movements").select("delta,balance,reason,note,created_at")
+            .eq("ingredient_id", id).order("created_at", { ascending: false }).limit(40);
+        } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        var body = ov.querySelector("#h_body");
+        if (r.error || !r.data) { body.innerHTML = '<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+        if (!r.data.length) { body.innerHTML = '<div class="empty">ยังไม่มีประวัติ</div>'; return; }
+        body.innerHTML = r.data.map(function (m) {
+          var d = Number(m.delta);
+          return '<div class="hrow"><div><b>' + (REASON[m.reason] || m.reason) + "</b>" + (m.note ? " · " + esc(m.note) : "") +
+            '<div class="muted sm">' + Admin.fmtDT(m.created_at) + '</div></div><div style="text-align:right"><span class="' + (d >= 0 ? "up" : "down") + '">' +
+            (d >= 0 ? "+" : "") + fmt(d) + '</span><div class="muted sm">คงเหลือ ' + fmt(m.balance) + "</div></div></div>";
+        }).join("");
+      }
+
+      // ---------- เพิ่ม / แก้ไขวัตถุดิบ ----------
+      function openForm(id) {
+        var it = id ? find(id) : null;
+        var ov = Admin.modal(
+          "<h2>" + (it ? "แก้ไขวัตถุดิบ" : "เพิ่มวัตถุดิบ") + "</h2>" +
+          '<label class="l">ชื่อวัตถุดิบ</label><input id="f_name" maxlength="60" value="' + esc(it ? it.name : "") + '">' +
+          '<label class="l">หน่วย</label><input id="f_unit" maxlength="12" list="unitList" value="' + esc(it ? it.unit : "กก.") + '">' +
+          '<datalist id="unitList"><option value="กก."><option value="กรัม"><option value="ลิตร"><option value="มล."><option value="ขวด"><option value="ถุง"><option value="ชิ้น"><option value="กล่อง"></datalist>' +
+          '<label class="l">แจ้งเตือนเมื่อเหลือไม่เกิน</label><input id="f_min" type="number" min="0" step="any" inputmode="decimal" value="' + (it ? Number(it.min_stock) : 0) + '">' +
+          (it ? "" : '<label class="l">จำนวนตั้งต้น</label><input id="f_init" type="number" min="0" step="any" inputmode="decimal" value="0">') +
+          (it ? '<div class="muted sm" style="margin-top:8px">ปรับจำนวนคงเหลือได้ที่ปุ่ม รับเข้า / ใช้ไป / นับสต็อกใหม่</div>' : "") +
+          '<label class="chk"><input type="checkbox" id="f_av"' + (!it || it.active ? " checked" : "") + "> ใช้งานอยู่</label>" +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact">' + (it ? '<button class="btn danger" id="f_del">ลบ</button>' : "") +
+          '<button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        $("f_cancel").onclick = function () { ov.close(); };
+
+        if ($("f_del")) {
+          $("f_del").onclick = async function () {
+            if (!confirm("ลบ \"" + it.name + "\" ใช่หรือไม่?\nประวัติของวัตถุดิบนี้จะถูกลบด้วย")) return;
+            var r;
+            try { r = await db.from("ingredients").delete().eq("id", it.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+            if (r.error || !r.data || !r.data.length) { showErr((r.error && r.error.message) || "ลบไม่สำเร็จ"); return; }
+            ov.close(); Admin.toast("ลบแล้ว"); load();
+          };
+        }
+
+        $("f_save").onclick = async function () {
+          var name = $("f_name").value.trim(), unit = $("f_unit").value.trim();
+          if (!name) { showErr("กรุณากรอกชื่อวัตถุดิบ"); return; }
+          if (!unit) { showErr("กรุณากรอกหน่วย"); return; }
+          var min = Number($("f_min").value);
+          if ($("f_min").value === "" || !isFinite(min) || min < 0) { showErr("จำนวนแจ้งเตือนไม่ถูกต้อง"); return; }
+          var init = 0;
+          if (!it) {
+            init = Number($("f_init").value);
+            if (!isFinite(init) || init < 0) { showErr("จำนวนตั้งต้นไม่ถูกต้อง"); return; }
+          }
+          var row = { name: name, unit: unit, min_stock: min, active: $("f_av").checked };
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          var r;
+          try {
+            r = it ? await db.from("ingredients").update(row).eq("id", it.id).select("id")
+                   : await db.from("ingredients").insert(row).select("id");
+          } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data || !r.data.length) {
+            showErr((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก");
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          if (!it && init > 0) {
+            try { await db.rpc("adjust_stock", { p_id: r.data[0].id, p_delta: init, p_reason: "in", p_note: "ยอดตั้งต้น" }); } catch (x) {}
+          }
+          ov.close(); Admin.toast("บันทึกแล้ว"); load();
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

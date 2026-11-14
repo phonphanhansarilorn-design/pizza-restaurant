@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · ออเดอร์</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "orders", roles: ["admin", "cashier"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var filter = "all", range = "today", orders = [];
+      var NEXT = {
+        pending: ["preparing", "รับออเดอร์"],
+        preparing: ["cooking", "เริ่มทำอาหาร"],
+        cooking: ["done", "เสร็จแล้ว"]
+      };
+      var TABS = [["all", "ทั้งหมด"], ["pending", "รอรับ"], ["preparing", "เตรียม"], ["cooking", "กำลังทำ"], ["done", "เสร็จ"], ["cancelled", "ยกเลิก"]];
+
+      c.innerHTML =
+        '<div class="tools" id="tabs"></div>' +
+        '<div class="tools"><select class="sel" id="range">' +
+          '<option value="today">วันนี้</option><option value="week">7 วันล่าสุด</option><option value="all">ทั้งหมด (150 ล่าสุด)</option>' +
+        '</select><button class="btn" id="reload">🔄 รีเฟรช</button></div>' +
+        '<div id="list"><div class="panel empty">กำลังโหลด…</div></div>';
+
+      function drawTabs() {
+        var counts = { all: orders.length };
+        orders.forEach(function (o) { counts[o.status] = (counts[o.status] || 0) + 1; });
+        document.getElementById("tabs").innerHTML = TABS.map(function (t) {
+          return '<button class="chip' + (filter === t[0] ? " on" : "") + '" data-f="' + t[0] + '">' +
+            t[1] + " (" + (counts[t[0]] || 0) + ")</button>";
+        }).join("");
+      }
+
+      function itemHtml(it) {
+        var tops = (it.order_item_toppings || []).map(function (t) { return esc(t.name); }).join(", ");
+        return '<div class="it"><b>' + it.qty + "× " + esc(it.name) + "</b>" +
+          (it.size ? ' <span class="tag">' + esc(it.size) + "</span>" : "") +
+          (it.sauce ? ' <span class="muted sm">' + esc(it.sauce) + "</span>" : "") +
+          '<span style="float:right" class="muted sm">' + baht(it.unit_price * it.qty) + "</span>" +
+          (tops ? '<div class="muted sm">' + tops + "</div>" : "") + "</div>";
+      }
+
+      function card(o) {
+        var nx = NEXT[o.status];
+        var payTxt = o.payment_method === "qr" ? "สแกนจ่าย" : "เงินสด";
+        var h = '<div class="oc"><div class="oc-h"><div><h3>#' + o.id + " · โต๊ะ " + esc(o.table_label) + "</h3>" +
+          '<div class="meta">' + Admin.fmtDT(o.created_at) + "</div></div>" +
+          '<div class="tags"><span class="badge st-' + o.status + '">' + Admin.STATUS[o.status] + "</span>" +
+          '<span class="badge pay-' + o.payment_status + '">' + payTxt + " · " +
+          (o.payment_status === "paid" ? "ชำระแล้ว" : "ยังไม่ชำระ") + "</span></div></div>";
+        (o.order_items || []).forEach(function (it) { h += itemHtml(it); });
+        if (o.note) h += '<div class="note-box">📝 ' + esc(o.note) + "</div>";
+        h += '<div class="oc-f"><span class="total">' + baht(o.total) + '</span><div class="acts">';
+        if (o.payment_status === "unpaid" && o.status !== "cancelled") {
+          h += '<button class="btn" data-act="paid" data-id="' + o.id + '">💰 รับเงินแล้ว</button>';
+        }
+        if (o.status !== "done" && o.status !== "cancelled") {
+          h += '<button class="btn danger" data-act="cancel" data-id="' + o.id + '">ยกเลิก</button>';
+        }
+        if (nx) h += '<button class="btn accent" data-act="next" data-id="' + o.id + '" data-to="' + nx[0] + '">' + nx[1] + "</button>";
+        return h + "</div></div></div>";
+      }
+
+      function drawList() {
+        drawTabs();
+        var list = orders.filter(function (o) { return filter === "all" || o.status === filter; });
+        var el = document.getElementById("list");
+        el.innerHTML = list.length ? list.map(card).join("") : '<div class="panel empty">ไม่มีออเดอร์</div>';
+      }
+
+      async function load() {
+        var q = db.from("orders")
+          .select("id,table_label,status,payment_method,payment_status,total,note,created_at," +
+                  "order_items(id,name,kind,size,sauce,qty,unit_price,order_item_toppings(name,price))")
+          .order("created_at", { ascending: false }).limit(150);
+        if (range === "today") q = q.gte("created_at", Admin.dayStart(0));
+        else if (range === "week") q = q.gte("created_at", Admin.dayStart(6));
+        var r;
+        try { r = await q; } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          document.getElementById("list").innerHTML =
+            '<div class="panel empty">โหลดออเดอร์ไม่สำเร็จ<br><small>' + esc(r.error && r.error.message) + "</small></div>";
+          return;
+        }
+        Admin.setDb(true);
+        orders = r.data;
+        drawList();
+      }
+
+      // ปุ่มต่าง ๆ
+      c.addEventListener("click", async function (e) {
+        var t = e.target.closest("[data-f]");
+        if (t) { filter = t.getAttribute("data-f"); drawList(); return; }
+        if (e.target.id === "reload") { load(); return; }
+
+        var b = e.target.closest("[data-act]");
+        if (!b) return;
+        var id = Number(b.getAttribute("data-id")), act = b.getAttribute("data-act");
+        var patch = null;
+        if (act === "next") patch = { status: b.getAttribute("data-to") };
+        if (act === "paid") patch = { payment_status: "paid" };
+        if (act === "cancel") {
+          if (!confirm("ยกเลิกออเดอร์ #" + id + " ใช่หรือไม่?")) return;
+          patch = { status: "cancelled" };
+        }
+        if (!patch) return;
+        b.disabled = true;
+        if (await Admin.updateOrder(id, patch)) load(); else b.disabled = false;
+      });
+      document.getElementById("range").onchange = function () { range = this.value; load(); };
+
+      Admin.live(function (isNew) { load(); if (isNew) Admin.beep(); });
+      load();
+    });
+  </script>
+</body>
+</html>

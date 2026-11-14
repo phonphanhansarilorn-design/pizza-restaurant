@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · ภาพรวม</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "dashboard", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      c.innerHTML = '<div class="panel empty">กำลังโหลด…</div>';
+
+      function dayLabel(d) {
+        return new Date(d + "T00:00:00+07:00").toLocaleDateString("th-TH", {
+          weekday: "short", day: "numeric", timeZone: "Asia/Bangkok"
+        });
+      }
+
+      function draw(s) {
+        var html =
+          '<div class="stats">' +
+            '<div class="stat"><span>ยอดขายวันนี้</span><b>' + baht(s.today_sales) + "</b></div>" +
+            '<div class="stat"><span>ออเดอร์ทั้งหมด</span><b>' + Number(s.total_orders) + "</b></div>" +
+            '<div class="stat"><span>กำลังปรุง</span><b>' + Number(s.cooking) + "</b></div>" +
+            '<div class="stat"><span>รายได้รวม</span><b>' + baht(s.total_revenue) + "</b></div>" +
+          "</div>";
+
+        // เมนูขายดี
+        html += '<div class="panel"><h2>เมนูขายดี</h2>';
+        if (!s.best || !s.best.length) {
+          html += '<div class="empty">ยังไม่มีข้อมูล</div>';
+        } else {
+          s.best.forEach(function (b) {
+            html += '<div class="rowx"><span>' + esc(b.name) + "</span><b>" + Number(b.qty) + "</b></div>";
+          });
+        }
+        html += "</div>";
+
+        // กราฟ 7 วัน
+        var daily = s.daily || [];
+        var max = 0;
+        daily.forEach(function (d) { if (Number(d.sales) > max) max = Number(d.sales); });
+        html += '<div class="panel"><h2>ยอดขาย 7 วันล่าสุด</h2><div class="bars">';
+        daily.forEach(function (d, i) {
+          var v = Number(d.sales);
+          var h = max > 0 ? Math.max(2, Math.round(v / max * 100)) : 2;
+          html += '<div class="bar' + (i === daily.length - 1 ? " today" : "") + '">' +
+            "<em>" + (v > 0 ? baht(v) : "") + "</em>" +
+            '<i style="height:' + h + '%"></i>' +
+            "<span>" + dayLabel(d.d) + "</span></div>";
+        });
+        html += "</div></div>";
+        c.innerHTML = html;
+      }
+
+      async function load() {
+        var r;
+        try { r = await db.rpc("dashboard_stats"); } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          var m = (r.error && r.error.message) || "";
+          c.innerHTML = '<div class="panel empty">โหลดข้อมูลไม่สำเร็จ<br><small>' + esc(m) + "</small>" +
+            (/function|schema cache/i.test(m) ? "<br><small>ยังไม่ได้รัน SQL ส่วนที่ 4 หรือไม่</small>" : "") +
+            '<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        draw(r.data);
+      }
+
+      Admin.live(function (isNew) { load(); if (isNew) Admin.beep(); });
+      load();
+    });
+  </script>
+</body>
+</html>

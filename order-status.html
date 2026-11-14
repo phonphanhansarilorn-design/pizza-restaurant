@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>สถานะออเดอร์</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .hero-o { text-align: center; padding: 18px 0 6px; }
+    .hero-o .no { font: 900 44px/1 "Playfair Display", serif; color: var(--gold); }
+    .hero-o p { color: var(--muted); font-size: 14px; margin-top: 6px; }
+    .steps { margin: 18px 0; }
+    .st {
+      display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 10px;
+      border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,.04);
+      color: var(--muted); transition: all .3s;
+    }
+    .st .ic {
+      width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: 22px; background: rgba(255,255,255,.06); flex-shrink: 0;
+    }
+    .st b { font-size: 16px; font-weight: 600; }
+    .st.done { color: #8be2a2; border-color: rgba(63,174,90,.5); background: rgba(63,174,90,.1); }
+    .st.done .ic { background: rgba(63,174,90,.25); }
+    .st.now { color: var(--text); border-color: var(--gold); background: #2f2318; box-shadow: 0 0 0 1px var(--gold), 0 8px 22px rgba(242,106,33,.25); }
+    .st.now .ic { background: linear-gradient(135deg, #f26a21, #ff9a45); animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 50% { transform: scale(1.12); } }
+    .cancelled {
+      text-align: center; padding: 22px; margin: 18px 0; border-radius: 18px;
+      border: 1px solid #a8453b; background: rgba(229,115,106,.12); color: #ff9a92; font-weight: 600;
+    }
+    .info {
+      display: flex; justify-content: space-between; padding: 12px 14px; margin-bottom: 8px;
+      border-radius: 14px; background: rgba(255,255,255,.05); font-size: 14px;
+    }
+    .info span:first-child { color: var(--muted); }
+    .live { text-align: center; color: var(--muted); font-size: 12px; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="top" style="padding:10px 0">
+      <a class="round" href="index.html">‹</a>
+      <h2>สถานะออเดอร์</h2>
+      <span style="width:42px"></span>
+    </div>
+
+    <div id="box"><p class="live" style="padding:50px 0">กำลังโหลด…</p></div>
+
+    <a class="cta" href="menu.html" style="display:block;text-align:center;text-decoration:none;margin-top:20px">สั่งเพิ่ม</a>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="js/supabase.js"></script>
+  <script>
+    // ===== อ่านรหัสออเดอร์จากลิงก์ (หรือจากที่จำไว้ในเครื่อง) =====
+    var q = new URLSearchParams(window.location.search);
+    var oid = q.get("id"), tok = q.get("t");
+    if (!oid || !tok) {
+      try {
+        var last = JSON.parse(localStorage.getItem("lastOrder"));
+        if (last) { oid = last.id; tok = last.token; }
+      } catch (e) {}
+    }
+    var okId = /^\d+$/.test(String(oid || ""));
+    var okTok = /^[0-9a-f-]{36}$/i.test(String(tok || ""));
+
+    var STEPS = [
+      ["pending", "รอรับออเดอร์", "🧾"],
+      ["preparing", "กำลังเตรียมอาหาร", "🥣"],
+      ["cooking", "กำลังทำอาหาร", "🔥"],
+      ["done", "เสร็จเรียบร้อย", "✅"]
+    ];
+    var box = document.getElementById("box");
+    var timer = null;
+
+    function draw(o) {
+      var h = '<div class="hero-o"><div class="no">#' + o.id + "</div>" +
+        "<p>📍 โต๊ะ " + String(o.table).replace(/[<>&"']/g, "") + "</p></div>";
+
+      if (o.status === "cancelled") {
+        h += '<div class="cancelled">ออเดอร์นี้ถูกยกเลิก<br><small style="font-weight:400">หากมีข้อสงสัย กรุณาติดต่อพนักงาน</small></div>';
+      } else {
+        var cur = STEPS.findIndex(function (s) { return s[0] === o.status; });
+        h += '<div class="steps">';
+        STEPS.forEach(function (s, i) {
+          var cls = i < cur || o.status === "done" ? "done" : i === cur ? "now" : "";
+          h += '<div class="st ' + cls + '"><div class="ic">' + (cls === "done" ? "✓" : s[2]) + "</div><b>" + s[1] + "</b></div>";
+        });
+        h += "</div>";
+      }
+
+      var pay = o.payment_method === "qr" ? "สแกนจ่าย" : "เงินสด";
+      var paid = o.payment_status === "paid" ? "ชำระแล้ว" : "ยังไม่ชำระ";
+      h += '<div class="info"><span>ยอดรวม</span><b>' + Number(o.total) + " บาท</b></div>" +
+        '<div class="info"><span>วิธีชำระเงิน</span><b>' + pay + " · " + paid + "</b></div>";
+
+      if (o.status !== "done" && o.status !== "cancelled") {
+        h += '<p class="live">🔄 อัปเดตสถานะอัตโนมัติ</p>';
+      }
+      box.innerHTML = h;
+    }
+
+    async function load() {
+      var r;
+      try {
+        r = await db.rpc("get_order", { p_id: Number(oid), p_token: tok });
+      } catch (e) {
+        return;   // เน็ตหลุดชั่วคราว ลองใหม่รอบถัดไป
+      }
+      if (r.error) return;
+      if (!r.data) {
+        box.innerHTML = '<p class="live" style="padding:50px 0">ไม่พบออเดอร์นี้</p>';
+        clearInterval(timer);
+        return;
+      }
+      draw(r.data);
+      if (r.data.status === "done" || r.data.status === "cancelled") clearInterval(timer);
+    }
+
+    if (!db || !okId || !okTok) {
+      box.innerHTML = '<p class="live" style="padding:50px 0">ไม่พบออเดอร์ กรุณาสั่งอาหารใหม่อีกครั้ง</p>';
+    } else {
+      load();
+      timer = setInterval(load, 4000);   // เช็กสถานะทุก 4 วินาที
+    }
+  </script>
+</body>
+</html>

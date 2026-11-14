@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · พนักงาน</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+  <style>
+    .howto ol { margin: 8px 0 0 20px; line-height: 1.8; font-size: 14px; }
+    .howto code { background: #e2e8f0; padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+    .warn { margin-bottom: 14px; padding: 12px 14px; border-radius: 14px; background: #fef3c7; color: #92400e; font-weight: 600; }
+    .perm { font-size: 13px; line-height: 1.7; color: var(--muted); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "staff", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var me = Admin.user.id, list = [];
+      var ROLE = { admin: "ผู้ดูแลระบบ", cashier: "แคชเชียร์", kitchen: "ครัว", pending: "รอกำหนดสิทธิ์" };
+      var CLS = { admin: "st-preparing", cashier: "st-done", kitchen: "st-cooking", pending: "st-pending" };
+      var ICON = { admin: "👑", cashier: "💵", kitchen: "👨‍🍳", pending: "⏳" };
+      var ORDER = { pending: 0, admin: 1, cashier: 2, kitchen: 3 };
+
+      // ถ้าอีเมลลงท้าย @pizzahouse.com จะแสดงเป็นชื่อสั้น (ตรงกับที่พิมพ์ตอนเข้าสู่ระบบ)
+      function loginName(email) {
+        if (!email) return "-";
+        return /@pizzahouse\.com$/i.test(email) ? email.replace(/@pizzahouse\.com$/i, "") : email;
+      }
+      function find(id) { return list.find(function (x) { return x.id === id; }); }
+
+      async function load() {
+        var r;
+        try { r = await db.rpc("list_staff"); } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          var m = (r.error && r.error.message) || "";
+          c.innerHTML = '<div class="panel empty" style="margin-top:0">โหลดรายชื่อไม่สำเร็จ<br><small>' + esc(m) + "</small>" +
+            (/function|schema cache/i.test(m) ? "<br><small>ยังไม่ได้รัน SQL ส่วนที่ 8 หรือไม่</small>" : "") +
+            '<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        list = r.data.slice().sort(function (a, b) {
+          var o = (ORDER[a.role] == null ? 9 : ORDER[a.role]) - (ORDER[b.role] == null ? 9 : ORDER[b.role]);
+          return o || String(a.created_at).localeCompare(String(b.created_at));
+        });
+        draw();
+      }
+
+      function row(p) {
+        var self = p.id === me;
+        return '<div class="prow' + (p.active ? "" : " off") + '"><div class="pimg">' + (ICON[p.role] || "👤") + "</div>" +
+          '<div class="pinfo"><b>' + esc(p.full_name || loginName(p.email)) + (self ? ' <span class="kbadge">คุณ</span>' : "") + "</b>" +
+          '<div class="muted sm"><span class="badge ' + (CLS[p.role] || "") + '">' + (ROLE[p.role] || esc(p.role)) + "</span> เข้าสู่ระบบด้วย: <b>" + esc(loginName(p.email)) + "</b></div>" +
+          '<div class="muted sm">เข้าล่าสุด: ' + (p.last_sign_in_at ? Admin.fmtDT(p.last_sign_in_at) : "ยังไม่เคยเข้า") + (p.active ? "" : " · ปิดใช้งาน") + "</div></div>" +
+          '<div class="pctl"><label class="sw"><input type="checkbox" data-tg="' + esc(p.id) + '"' + (p.active ? " checked" : "") + (self ? " disabled" : "") + "><i></i></label>" +
+          '<button class="btn" data-edit="' + esc(p.id) + '">แก้ไข</button></div></div>';
+      }
+
+      function draw() {
+        var pend = list.filter(function (p) { return p.role === "pending" && p.active; }).length;
+        var h = "";
+        if (pend) h += '<div class="warn">⏳ มี ' + pend + " บัญชีรอกำหนดสิทธิ์ กด \"แก้ไข\" แล้วเลือกตำแหน่งให้</div>";
+        h += '<div class="panel howto" style="margin-top:0"><h2>วิธีเพิ่มพนักงานใหม่</h2><ol>' +
+          "<li>ที่ Supabase ไปที่ <b>Authentication</b> &gt; <b>Users</b> &gt; <b>Add user</b> &gt; <b>Create new user</b></li>" +
+          "<li>อีเมลตั้งแบบ <code>ชื่อ@pizzahouse.com</code> (เช่น <code>somchai@pizzahouse.com</code>) ใส่รหัสผ่าน และติ๊ก <b>Auto Confirm User</b></li>" +
+          "<li>กลับมารีเฟรชหน้านี้ จะเห็นบัญชีใหม่ขึ้นป้าย \"รอกำหนดสิทธิ์\" กด <b>แก้ไข</b> แล้วเลือกตำแหน่ง</li>" +
+          "<li>พนักงานเข้าสู่ระบบที่หน้า <b>เข้าหลังบ้าน</b> โดยพิมพ์แค่ชื่อ (เช่น <code>somchai</code>) กับรหัสผ่าน</li></ol>" +
+          '<div class="perm"><b>สิทธิ์ของแต่ละตำแหน่ง:</b> ผู้ดูแลระบบ = ใช้ได้ทุกเมนู · แคชเชียร์ = ออเดอร์ POS และจอครัว · ครัว = จอครัวอย่างเดียว</div></div>';
+        h += '<div class="gh">บัญชีทั้งหมด (' + list.length + ")</div>";
+        h += list.length ? list.map(row).join("") : '<div class="panel empty">ยังไม่มีบัญชี</div>';
+        c.innerHTML = h;
+      }
+
+      // เปิด-ปิดการใช้งาน
+      c.addEventListener("change", async function (e) {
+        var i = e.target.closest("input[data-tg]");
+        if (!i) return;
+        var id = i.getAttribute("data-tg"), val = i.checked, r;
+        try { r = await db.from("profiles").update({ active: val }).eq("id", id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data || !r.data.length) {
+          i.checked = !val;
+          Admin.toast((r.error && r.error.message) || "บันทึกไม่สำเร็จ");
+          return;
+        }
+        find(id).active = val;
+        i.closest(".prow").classList.toggle("off", !val);
+        Admin.toast(val ? "เปิดใช้งานแล้ว" : "ปิดใช้งานแล้ว (เข้าหลังบ้านไม่ได้)");
+      });
+
+      c.addEventListener("click", function (e) {
+        var ed = e.target.closest("[data-edit]");
+        if (ed) openForm(ed.getAttribute("data-edit"));
+      });
+
+      function openForm(id) {
+        var p = find(id);
+        if (!p) return;
+        var self = p.id === me;
+        var ov = Admin.modal(
+          "<h2>แก้ไขบัญชี</h2>" +
+          '<div class="muted sm">เข้าสู่ระบบด้วย: <b>' + esc(loginName(p.email)) + "</b> (" + esc(p.email || "") + ")</div>" +
+          '<label class="l">ชื่อที่แสดง</label><input id="f_name" maxlength="60" value="' + esc(p.full_name || "") + '">' +
+          '<label class="l">ตำแหน่ง</label><select id="f_role"' + (self ? " disabled" : "") + ">" +
+          '<option value="admin">ผู้ดูแลระบบ (ใช้ได้ทุกอย่าง)</option><option value="cashier">แคชเชียร์ (ออเดอร์ POS จอครัว)</option>' +
+          '<option value="kitchen">ครัว (จอครัวอย่างเดียว)</option><option value="pending">ยังไม่ให้สิทธิ์</option></select>' +
+          '<label class="chk"><input type="checkbox" id="f_av"' + (p.active ? " checked" : "") + (self ? " disabled" : "") + "> เปิดใช้งาน</label>" +
+          (self ? '<div class="muted sm" style="margin-top:8px">นี่คือบัญชีของคุณ จึงเปลี่ยนตำแหน่งหรือปิดใช้งานเองไม่ได้</div>' : "") +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact"><button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        $("f_role").value = p.role;
+        $("f_cancel").onclick = function () { ov.close(); };
+        $("f_save").onclick = async function () {
+          var row = { full_name: $("f_name").value.trim().slice(0, 60) };
+          if (!self) { row.role = $("f_role").value; row.active = $("f_av").checked; }
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          var r;
+          try { r = await db.from("profiles").update(row).eq("id", p.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data || !r.data.length) {
+            showErr((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก");
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          ov.close(); Admin.toast("บันทึกแล้ว"); load();
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

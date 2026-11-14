@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · รายรับ-รายจ่าย</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+  <style>
+    .mnav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .mnav b { min-width: 150px; text-align: center; font-size: 17px; }
+    .frow { display: flex; gap: 12px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 8px; }
+    .fd { width: 54px; text-align: center; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+    .fd b { display: block; font-size: 22px; color: var(--ink); line-height: 1.1; }
+    .fm { flex: 1; min-width: 0; }
+    .fm b { display: block; }
+    .amt { font-weight: 700; white-space: nowrap; font-size: 16px; }
+    .inc { color: #15803d; }
+    .exp { color: #dc2626; }
+    .mini { height: 6px; border-radius: 4px; background: #e2e8f0; margin: 2px 14px 8px; overflow: hidden; }
+    .mini i { display: block; height: 100%; background: var(--accent); }
+    .note2 { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "finance", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var CATS = {
+        income: ["เงินทุน", "รายรับอื่น ๆ"],
+        expense: ["วัตถุดิบ", "ค่าแรง", "ค่าเช่า", "ค่าน้ำ-ไฟ", "อุปกรณ์", "การตลาด", "ซ่อมบำรุง", "อื่น ๆ"]
+      };
+
+      function pad(n) { return n < 10 ? "0" + n : "" + n; }
+      function todayStr() { return new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); }
+      var curM = todayStr().slice(0, 7), month = curM, kindF = "all", rows = [], sales = null, rid = 0;
+
+      function mRange(m) {
+        var y = Number(m.slice(0, 4)), mo = Number(m.slice(5, 7));
+        var last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+        return [m + "-01", m + "-" + pad(last)];
+      }
+      function shiftM(m, d) {
+        var dt = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + d, 1));
+        return dt.getUTCFullYear() + "-" + pad(dt.getUTCMonth() + 1);
+      }
+      function mLabel(m) { return new Date(m + "-01T12:00:00Z").toLocaleDateString("th-TH", { month: "long", year: "numeric", timeZone: "UTC" }); }
+      function dayNum(d) { return Number(d.slice(8, 10)); }
+      function dayMon(d) { return new Date(d + "T12:00:00Z").toLocaleDateString("th-TH", { month: "short", timeZone: "UTC" }); }
+      function find(id) { return rows.find(function (x) { return x.id === id; }); }
+
+      c.innerHTML = '<div class="mnav"><button class="btn" id="mPrev">‹</button><b id="mLab"></b><button class="btn" id="mNext">›</button>' +
+        '<button class="btn" id="mNow">เดือนนี้</button></div><div id="fOut"><div class="panel empty">กำลังโหลด…</div></div>';
+
+      function drawNav() {
+        document.getElementById("mLab").textContent = mLabel(month);
+        document.getElementById("mNext").disabled = month >= curM;
+      }
+
+      async function load() {
+        drawNav();
+        var my = ++rid, rg = mRange(month);
+        var r;
+        try {
+          r = await Promise.all([
+            db.from("transactions").select("*").gte("occurred_on", rg[0]).lte("occurred_on", rg[1])
+              .order("occurred_on", { ascending: false }).order("id", { ascending: false }),
+            db.rpc("sales_report", { p_from: rg[0], p_to: rg[1], p_group: "month" })
+          ]);
+        } catch (e) { r = null; }
+        if (my !== rid) return;
+        if (!r || r[0].error || !r[0].data) {
+          Admin.setDb(false);
+          document.getElementById("fOut").innerHTML = '<div class="panel empty">โหลดข้อมูลไม่สำเร็จ<br><small>' + esc(r && r[0].error && r[0].error.message) +
+            '</small><br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        rows = r[0].data;
+        sales = null;
+        if (!r[1].error && r[1].data && r[1].data.summary) {
+          var s = r[1].data.summary;
+          sales = { total: Number(s.sales), unpaid: Number(s.unpaid), paid: Number(s.sales) - Number(s.unpaid) };
+        }
+        draw();
+      }
+
+      function draw() {
+        var inc = 0, exp = 0, byCat = {};
+        rows.forEach(function (t) {
+          var a = Number(t.amount);
+          if (t.kind === "income") inc += a;
+          else { exp += a; var k = t.category || "ไม่ระบุ"; byCat[k] = (byCat[k] || 0) + a; }
+        });
+        var salesPaid = sales ? sales.paid : 0;
+        var totalIn = salesPaid + inc, profit = totalIn - exp;
+
+        var h = '<div class="stats"><div class="stat"><span>รายรับรวม</span><b class="inc">' + baht(totalIn) + "</b></div>" +
+          '<div class="stat"><span>รายจ่ายรวม</span><b class="exp">' + baht(exp) + "</b></div>" +
+          '<div class="stat"><span>กำไรสุทธิ</span><b class="' + (profit >= 0 ? "inc" : "exp") + '">' + baht(profit) + "</b></div>" +
+          '<div class="stat"><span>ยอดค้างรับเงิน</span><b>' + (sales ? baht(sales.unpaid) : "-") + "</b></div></div>" +
+          '<div class="note2">' + (sales
+            ? "รายรับรวม = ยอดขายจากออเดอร์ที่รับเงินแล้ว " + baht(sales.paid) + " + รายรับอื่นที่บันทึก " + baht(inc) + " (ออเดอร์ที่ยกเลิกและที่ยังไม่รับเงินไม่นับ)"
+            : "โหลดยอดขายจากออเดอร์ไม่สำเร็จ ตัวเลขด้านบนนับเฉพาะรายการที่บันทึกเอง") + "</div>";
+
+        // สัดส่วนรายจ่ายตามหมวด
+        var cats = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; });
+        h += '<div class="panel"><h2>รายจ่ายแยกตามหมวด</h2>';
+        if (!cats.length) h += '<div class="empty">ยังไม่มีรายจ่ายในเดือนนี้</div>';
+        cats.forEach(function (k) {
+          var pct = exp ? Math.round(byCat[k] / exp * 100) : 0;
+          h += '<div class="rowx"><span>' + esc(k) + "</span><b>" + baht(byCat[k]) + " · " + pct + '%</b></div><div class="mini"><i style="width:' + pct + '%"></i></div>';
+        });
+        h += "</div>";
+
+        // รายการ
+        var shown = rows.filter(function (t) { return kindF === "all" || t.kind === kindF; });
+        h += '<div class="bar2" style="margin-top:16px"><div class="tools" style="margin:0">' +
+          [["all", "ทั้งหมด"], ["income", "รายรับ"], ["expense", "รายจ่าย"]].map(function (f) {
+            return '<button class="chip' + (kindF === f[0] ? " on" : "") + '" data-f="' + f[0] + '">' + f[1] + "</button>";
+          }).join("") + '</div><div class="tools" style="margin:0"><button class="btn" id="csv">⬇ CSV</button><button class="btn accent" id="add">+ เพิ่มรายการ</button></div></div>';
+        if (!shown.length) h += '<div class="panel empty">ไม่มีรายการ</div>';
+        shown.forEach(function (t) {
+          var isInc = t.kind === "income";
+          h += '<div class="frow"><div class="fd"><b>' + dayNum(t.occurred_on) + "</b>" + dayMon(t.occurred_on) + "</div>" +
+            '<div class="fm"><b>' + esc(t.category || (isInc ? "รายรับ" : "รายจ่าย")) + "</b>" +
+            (t.note ? '<div class="muted sm">' + esc(t.note) + "</div>" : "") + "</div>" +
+            '<div class="amt ' + (isInc ? "inc" : "exp") + '">' + (isInc ? "+" : "−") + baht(t.amount) + "</div>" +
+            '<button class="btn" data-edit="' + t.id + '">แก้ไข</button></div>';
+        });
+        document.getElementById("fOut").innerHTML = h;
+      }
+
+      c.addEventListener("click", function (e) {
+        var id = e.target.id;
+        if (id === "mPrev") { month = shiftM(month, -1); load(); return; }
+        if (id === "mNext") { if (month < curM) { month = shiftM(month, 1); load(); } return; }
+        if (id === "mNow") { month = curM; load(); return; }
+        if (id === "add") { openForm(null); return; }
+        if (id === "csv") { exportCsv(); return; }
+        var f = e.target.closest("[data-f]");
+        if (f) { kindF = f.getAttribute("data-f"); draw(); return; }
+        var ed = e.target.closest("[data-edit]");
+        if (ed) openForm(Number(ed.getAttribute("data-edit")));
+      });
+
+      // ----- ดาวน์โหลด CSV -----
+      function exportCsv() {
+        function cell(v) {
+          v = String(v == null ? "" : v);
+          if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+          return '"' + v.replace(/"/g, '""') + '"';
+        }
+        var lines = ["วันที่,ประเภท,หมวด,จำนวน,หมายเหตุ"];
+        rows.slice().reverse().forEach(function (t) {
+          lines.push([t.occurred_on, t.kind === "income" ? "รายรับ" : "รายจ่าย", cell(t.category), Number(t.amount), cell(t.note)].join(","));
+        });
+        var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "finance-" + month + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      }
+
+      // ----- เพิ่ม / แก้ไขรายการ -----
+      function openForm(id) {
+        var t = id ? find(id) : null;
+        var kind = t ? t.kind : "expense";
+        var ov = Admin.modal(
+          "<h2>" + (t ? "แก้ไขรายการ" : "เพิ่มรายการ") + "</h2>" +
+          '<label class="l">ประเภท</label><div class="chips" id="f_kind"></div>' +
+          '<label class="l">จำนวนเงิน (บาท)</label><input id="f_amt" type="number" min="0" step="any" inputmode="decimal" value="' + (t ? Number(t.amount) : "") + '">' +
+          '<label class="l">วันที่</label><input id="f_date" type="date" value="' + (t ? t.occurred_on : todayStr()) + '">' +
+          '<label class="l">หมวด</label><input id="f_cat" maxlength="40" list="catList" value="' + esc(t ? t.category : "") + '"><datalist id="catList"></datalist>' +
+          '<label class="l">หมายเหตุ (ถ้ามี)</label><input id="f_note" maxlength="200" value="' + esc(t ? t.note : "") + '">' +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact">' + (t ? '<button class="btn danger" id="f_del">ลบ</button>' : "") +
+          '<button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        function sync() {
+          $("f_kind").innerHTML = [["income", "💰 รายรับ"], ["expense", "🧾 รายจ่าย"]].map(function (x) {
+            return '<button type="button" class="cp' + (kind === x[0] ? " on" : "") + '" data-k="' + x[0] + '">' + x[1] + "</button>";
+          }).join("");
+          $("catList").innerHTML = CATS[kind].map(function (k) { return '<option value="' + esc(k) + '">'; }).join("");
+        }
+        sync();
+        $("f_kind").onclick = function (e) {
+          var b = e.target.closest("[data-k]");
+          if (b) { kind = b.getAttribute("data-k"); sync(); }
+        };
+        $("f_cancel").onclick = function () { ov.close(); };
+
+        if ($("f_del")) {
+          $("f_del").onclick = async function () {
+            if (!confirm("ลบรายการนี้ใช่หรือไม่?")) return;
+            var r;
+            try { r = await db.from("transactions").delete().eq("id", t.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+            if (r.error || !r.data || !r.data.length) { showErr((r.error && r.error.message) || "ลบไม่สำเร็จ"); return; }
+            ov.close(); Admin.toast("ลบแล้ว"); load();
+          };
+        }
+
+        $("f_save").onclick = async function () {
+          var raw = $("f_amt").value, amt = Number(raw);
+          if (raw === "" || !isFinite(amt) || amt <= 0 || amt > 10000000) { showErr("กรุณากรอกจำนวนเงินให้ถูกต้อง (ไม่เกิน 10,000,000)"); return; }
+          var date = $("f_date").value;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00Z"))) { showErr("กรุณาเลือกวันที่"); return; }
+          var row = {
+            kind: kind, amount: Math.round(amt * 100) / 100, occurred_on: date,
+            category: $("f_cat").value.trim().slice(0, 40), note: $("f_note").value.trim().slice(0, 200)
+          };
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          var r;
+          try {
+            r = t ? await db.from("transactions").update(row).eq("id", t.id).select("id")
+                  : await db.from("transactions").insert(row).select("id");
+          } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data || !r.data.length) {
+            showErr((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก");
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          month = date.slice(0, 7);   // พาไปดูเดือนของรายการที่เพิ่งบันทึก
+          ov.close(); Admin.toast("บันทึกแล้ว"); load();
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+/* ===== ฟอร์มและหน้าต่างป๊อปอัปของหลังบ้าน ===== */
+.mdl {
+  position: fixed; inset: 0; z-index: 200; background: rgba(15,23,42,.6);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 20px 12px; overflow-y: auto;
+}
+.mbox { width: 100%; max-width: 520px; background: #fff; border-radius: 22px; padding: 22px; margin: auto 0; }
+.mbox h2 { font-size: 20px; margin-bottom: 4px; }
+.mbox label.l { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 6px; }
+.mbox input:not([type=checkbox]):not([type=file]),
+.mbox select, .mbox textarea {
+  width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line);
+  font: 500 15px "Prompt"; background: #f8fafc; color: var(--ink);
+}
+.mbox textarea { min-height: 70px; resize: vertical; }
+.mbox input:focus, .mbox select:focus, .mbox textarea:focus { outline: 2px solid var(--accent); background: #fff; }
+.mbox .chk { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-weight: 600; cursor: pointer; }
+.mbox .chk input { width: 20px; height: 20px; }
+.mact { display: flex; gap: 8px; justify-content: flex-end; margin-top: 22px; flex-wrap: wrap; }
+.mact .btn { padding: 12px 18px; }
+.ferr { margin-top: 14px; padding: 10px 12px; border-radius: 12px; background: #fee2e2; color: #991b1b; font-size: 14px; }
+.g3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.g3 span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-align: center; }
+
+/* ===== แถวรายการ ===== */
+.bar2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.gh { font-weight: 700; font-size: 14px; color: var(--muted); margin: 16px 4px 8px; }
+.prow {
+  display: flex; gap: 12px; align-items: center; background: #fff; border: 1px solid var(--line);
+  border-radius: 16px; padding: 12px; margin-bottom: 10px;
+}
+.prow.off { opacity: .55; }
+.pimg {
+  width: 60px; height: 60px; border-radius: 14px; background: #f1f5f9; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 30px; overflow: hidden;
+}
+.pimg img { width: 100%; height: 100%; object-fit: cover; }
+.pimg svg { width: 72%; height: 72%; }
+.pinfo { flex: 1; min-width: 0; }
+.pinfo b { display: block; font-size: 16px; }
+.pctl { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.kbadge { display: inline-block; padding: 2px 9px; border-radius: 8px; background: #e2e8f0; font-size: 12px; font-weight: 600; margin-right: 4px; }
+@media (max-width: 560px) {
+  .prow { flex-wrap: wrap; }
+  .pctl { width: 100%; justify-content: space-between; }
+}
+
+/* ===== สวิตช์เปิด-ปิดขาย ===== */
+.sw { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+.sw input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.sw i { position: absolute; inset: 0; background: #cbd5e1; border-radius: 999px; transition: .2s; }
+.sw i::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.sw input:checked + i { background: var(--ok); }
+.sw input:checked + i::after { transform: translateX(20px); }
+
+/* ===== ชิปเลือกท็อปปิ้ง ===== */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font: 500 13px "Prompt"; cursor: pointer; color: var(--ink); }
+.cp.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.cp.gone { border-style: dashed; }
+
+/* ===== อัปโหลดรูป ===== */
+.imgbox { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.imgbox .pimg { width: 84px; height: 84px; }
+.imgbox .pimg.sq svg { width: 70%; height: 70%; }
+.filebtn { position: relative; overflow: hidden; display: inline-block; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }

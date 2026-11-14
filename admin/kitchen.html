@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>จอครัว</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "kitchen", roles: ["admin", "cashier", "kitchen"], title: "จอครัว" }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var orders = [];
+      var COLS = [
+        ["pending", "🧾 รอรับออเดอร์", "preparing", "รับออเดอร์"],
+        ["preparing", "🥣 กำลังเตรียม", "cooking", "เริ่มทำอาหาร"],
+        ["cooking", "🔥 กำลังทำ", "done", "เสร็จแล้ว ✓"]
+      ];
+
+      function mins(iso) { return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000)); }
+
+      function card(o, col) {
+        var m = mins(o.created_at);
+        var late = m >= 15;
+        var h = '<div class="kc' + (late ? " late" : "") + '"><div class="kc-h"><b>โต๊ะ ' + esc(o.table_label) + "</b>" +
+          "<span>#" + o.id + " · " + m + " นาที</span></div>";
+        (o.order_items || []).forEach(function (it) {
+          var tops = (it.order_item_toppings || []).map(function (t) { return esc(t.name); }).join(", ");
+          h += '<div class="it"><b>' + it.qty + "× " + esc(it.name) + "</b>" +
+            (it.size ? ' <span class="tag">' + esc(it.size) + "</span>" : "") +
+            (it.sauce ? ' <span class="muted sm">' + esc(it.sauce) + "</span>" : "") +
+            (tops ? '<div class="muted sm">' + tops + "</div>" : "") + "</div>";
+        });
+        if (o.note) h += '<div class="note-box">📝 ' + esc(o.note) + "</div>";
+        h += '<button class="btn ' + (col[2] === "done" ? "accent" : "primary") + '" data-id="' + o.id + '" data-to="' + col[2] + '">' + col[3] + "</button></div>";
+        return h;
+      }
+
+      function draw() {
+        var html = '<div class="kcols">';
+        COLS.forEach(function (col) {
+          var list = orders.filter(function (o) { return o.status === col[0]; });
+          html += '<div class="kcol"><h2>' + col[1] + "<span>" + list.length + "</span></h2>" +
+            (list.length ? list.map(function (o) { return card(o, col); }).join("") : '<div class="panel empty" style="margin-top:0">ไม่มีออเดอร์</div>') +
+            "</div>";
+        });
+        c.innerHTML = html + "</div>";
+      }
+
+      async function load() {
+        var r;
+        try {
+          r = await db.from("orders")
+            .select("id,table_label,status,note,created_at,order_items(id,name,size,sauce,qty,order_item_toppings(name))")
+            .in("status", ["pending", "preparing", "cooking"])
+            .order("created_at", { ascending: true }).limit(100);
+        } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          c.innerHTML = '<div class="panel empty">โหลดออเดอร์ไม่สำเร็จ<br><small>' + esc(r.error && r.error.message) + "</small></div>";
+          return;
+        }
+        Admin.setDb(true);
+        orders = r.data;
+        draw();
+      }
+
+      // กดปุ่มเลื่อนขั้นออเดอร์
+      c.addEventListener("click", async function (e) {
+        var b = e.target.closest("button[data-id]");
+        if (!b) return;
+        b.disabled = true;
+        if (await Admin.updateOrder(Number(b.getAttribute("data-id")), { status: b.getAttribute("data-to") })) load();
+        else b.disabled = false;
+      });
+
+      Admin.live(function (isNew) { load(); if (isNew) Admin.beep(); });
+      setInterval(draw, 30000);   // อัปเดตเวลาที่รอ
+      load();
+    });
+  </script>
+</body>
+</html>

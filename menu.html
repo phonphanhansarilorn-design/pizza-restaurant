@@ -32,6 +32,7 @@
     }
     .madd:active { transform: scale(.95); }
     .dr .mbody { display: flex; flex-direction: column; gap: 4px; }
+    .note { text-align: center; color: var(--muted); padding: 40px 0; }
   </style>
 </head>
 <body>
@@ -59,43 +60,11 @@
 
   <div class="toast" id="toast"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="js/supabase.js"></script>
   <script src="js/pizza.js"></script>
   <script src="js/cart.js"></script>
   <script>
-    // ===== รายการพิซซ่า (ตัวอย่าง ภายหลังจะดึงจาก Supabase) =====
-    // t = ท็อปปิ้ง: [id, ชื่อไทย, รูปทรง, จำนวนชิ้น]
-    var PRODUCTS = [
-      { id: "margherita", name: "มาร์เกอริตา", desc: "ซอสมะเขือเทศ มอสซาเรลลา โหระพาสด",
-        price: { S: 169, M: 229, L: 289 },
-        t: [["cheese", "มอสซาเรลลา", "moz", 9], ["basil", "โหระพา", "basil", 7]] },
-      { id: "pepperoni", name: "เปปเปอโรนี", desc: "มอสซาเรลลาเยิ้ม เปปเปอโรนีรสจัดจ้าน",
-        price: { S: 189, M: 249, L: 309 },
-        t: [["cheese", "มอสซาเรลลา", "moz", 8], ["pepperoni", "เปปเปอโรนี", "pep", 12]] },
-      { id: "hawaiian", name: "ฮาวายเอี้ยน", desc: "แฮม สับปะรดหวานฉ่ำ มอสซาเรลลา",
-        price: { S: 189, M: 249, L: 309 },
-        t: [["cheese", "มอสซาเรลลา", "moz", 8], ["ham", "แฮม", "ham", 8], ["pineapple", "สับปะรด", "pine", 8]] },
-      { id: "fourcheese", name: "โฟร์ชีส", desc: "มอสซาเรลลา สกาโมร์ซา กอร์กอนโซลา พาร์เมซาน",
-        price: { S: 209, M: 269, L: 329 },
-        t: [["cheese", "มอสซาเรลลา", "moz", 7], ["scam", "สกาโมร์ซา", "scam", 6], ["gorg", "กอร์กอนโซลา", "gorg", 6], ["parm", "พาร์เมซาน", "parm", 8]] },
-      { id: "seafood", name: "ซีฟู้ด", desc: "กุ้ง ทูน่า มะกอกดำ มะเขือเทศ",
-        price: { S: 219, M: 279, L: 339 },
-        t: [["shr", "กุ้ง", "shr", 7], ["tuna", "ทูน่า", "tuna", 6], ["oli", "มะกอกดำ", "oli", 10], ["tom", "มะเขือเทศ", "tom", 6]] },
-      { id: "baconmush", name: "เบคอนเห็ด", desc: "เบคอนกรอบ เห็ดสด มอสซาเรลลา",
-        price: { S: 199, M: 259, L: 319 },
-        t: [["cheese", "มอสซาเรลลา", "moz", 7], ["bacon", "เบคอน", "bacon", 8], ["mushroom", "เห็ด", "mush", 9]] }
-    ];
-
-    // ===== รายการเครื่องดื่ม (ตัวอย่าง) =====
-    var DRINKS = [
-      { id: "water", name: "น้ำเปล่า", icon: "💧", price: 15 },
-      { id: "coke", name: "โค้ก", icon: "🥤", price: 25 },
-      { id: "orange", name: "น้ำส้มคั้นสด", icon: "🍊", price: 35 },
-      { id: "thaitea", name: "ชาไทยเย็น", icon: "🧋", price: 35 },
-      { id: "lemontea", name: "ชามะนาว", icon: "🍋", price: 35 },
-      { id: "coffee", name: "กาแฟเย็น", icon: "☕", price: 45 },
-      { id: "soda", name: "โซดามะนาว", icon: "🍹", price: 35 }
-    ];
-
     // ===== แถบล่าง: สรุปตะกร้า =====
     function updateBar() {
       var n = cartCount();
@@ -110,7 +79,7 @@
       var c = readCart();
       var i = c.findIndex(function (it) { return it.key === key; });
       if (i < 0) return;
-      c[i].qty = (c[i].qty || 1) + d;
+      c[i].qty = Math.min((c[i].qty || 1) + d, 20);
       if (c[i].qty <= 0) c.splice(i, 1);   // ลดจนเหลือ 0 = เอาออกจากตะกร้า
       writeCart(c);
       refresh();
@@ -146,21 +115,26 @@
     }
 
     // ===== วาดรายการพิซซ่า =====
-    function renderPizzas() {
+    function renderPizzas(products) {
       var list = document.getElementById("pizzaList");
-      PRODUCTS.forEach(function (p) {
+      list.innerHTML = "";
+      if (!products.length) { list.innerHTML = '<p class="note">ยังไม่มีพิซซ่าในเมนู</p>'; return; }
+
+      products.forEach(function (p) {
         var size = "M";
+        var price = { S: Number(p.price_s), M: Number(p.price_m), L: Number(p.price_l) };
+        var recipe = (p.recipe || []).filter(function (x) { return SH[x[2]]; });
         var card = document.createElement("div");
         card.className = "mi";
         card.innerHTML =
           '<div class="mth"><svg viewBox="-160 -160 320 320"></svg></div>' +
-          '<div class="mbody"><h3>' + p.name + "</h3><p>" + p.desc + "</p>" +
+          '<div class="mbody"><h3>' + esc(p.name) + "</h3><p>" + esc(p.description || "") + "</p>" +
           '<div class="msz"></div>' +
           '<div class="mrow"><span class="mprice"></span><div class="ctl"></div></div></div>';
         list.appendChild(card);
 
         var pz = new Pizza(card.querySelector("svg"));
-        p.t.forEach(function (x) { pz.add({ id: x[0], s: x[2], k: x[3] }); });
+        recipe.forEach(function (x) { pz.add({ id: x[0], s: x[2], k: x[3] }); });
 
         var szBox = card.querySelector(".msz");
         var priceEl = card.querySelector(".mprice");
@@ -175,7 +149,7 @@
             b.onclick = function () { size = s; drawSize(); ctl.redraw(); };
             szBox.appendChild(b);
           });
-          priceEl.textContent = p.price[size] + " ฿";
+          priceEl.textContent = price[size] + " ฿";
         }
 
         bindControl(
@@ -183,10 +157,10 @@
           function () { return "p:" + p.id + ":" + size; },
           function () {
             return {
-              key: "p:" + p.id + ":" + size, name: p.name, size: size, sauce: "ซอสแดง",
-              basePrice: p.price[size],
-              toppings: p.t.map(function (x) { return { id: x[0], name: x[1], price: 0 }; }),
-              unitPrice: p.price[size],
+              key: "p:" + p.id + ":" + size, pid: p.id, name: p.name, size: size, sauce: "ซอสแดง",
+              basePrice: price[size],
+              toppings: recipe.map(function (x) { return { id: x[0], name: x[1], price: 0 }; }),
+              unitPrice: price[size],
               look: snapshotLook(pz, "R")
             };
           }
@@ -196,22 +170,53 @@
     }
 
     // ===== วาดรายการเครื่องดื่ม =====
-    function renderDrinks() {
+    function renderDrinks(drinks) {
       var list = document.getElementById("drinkList");
-      DRINKS.forEach(function (d) {
+      list.innerHTML = "";
+      if (!drinks.length) { list.innerHTML = '<p class="note">ยังไม่มีเครื่องดื่มในเมนู</p>'; return; }
+
+      drinks.forEach(function (d) {
+        var price = Number(d.price);
         var card = document.createElement("div");
         card.className = "mi dr";
         card.innerHTML =
-          '<div class="thumb">' + d.icon + "</div>" +
-          '<div class="mbody"><h3>' + d.name + '</h3><span class="mprice">' + d.price + " ฿</span></div>" +
+          '<div class="thumb">' + esc(d.icon || "🥤") + "</div>" +
+          '<div class="mbody"><h3>' + esc(d.name) + '</h3><span class="mprice">' + price + " ฿</span></div>" +
           '<div class="ctl"></div>';
         list.appendChild(card);
         bindControl(
           card.querySelector(".ctl"),
           function () { return "d:" + d.id; },
-          function () { return { key: "d:" + d.id, name: d.name, icon: d.icon, unitPrice: d.price }; }
+          function () { return { key: "d:" + d.id, pid: d.id, name: d.name, icon: d.icon, unitPrice: price }; }
         );
       });
+    }
+
+    // ===== โหลดเมนูจากฐานข้อมูล =====
+    async function loadMenu() {
+      var pl = document.getElementById("pizzaList");
+      var dl = document.getElementById("drinkList");
+      pl.innerHTML = '<p class="note">กำลังโหลดเมนู…</p>';
+      dl.innerHTML = "";
+
+      function fail() {
+        var h = '<div class="note">โหลดเมนูไม่สำเร็จ<br><button class="ghost" onclick="loadMenu()">ลองใหม่</button></div>';
+        pl.innerHTML = h;
+        dl.innerHTML = h;
+      }
+      if (!db) { fail(); return; }
+
+      var r;
+      try {
+        r = await db.from("products")
+          .select("id,kind,name,description,icon,price,price_s,price_m,price_l,recipe,sort_order")
+          .in("kind", ["pizza", "drink"])
+          .order("sort_order");
+      } catch (e) { fail(); return; }
+      if (r.error || !r.data) { fail(); return; }
+
+      renderPizzas(r.data.filter(function (x) { return x.kind === "pizza"; }));
+      renderDrinks(r.data.filter(function (x) { return x.kind === "drink"; }));
     }
 
     // ===== แท็บ พิซซ่า / เครื่องดื่ม =====
@@ -231,10 +236,9 @@
       document.getElementById("drinkList").hidden = tab !== "drink";
     }
 
-    renderPizzas();
-    renderDrinks();
     drawTabs();
     refresh();
+    loadMenu();
   </script>
 </body>
 </html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · โต๊ะ/QR Code</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <link rel="stylesheet" href="../css/admin-forms.css">
+  <style>
+    .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .tcard { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 14px; text-align: center; }
+    .tcard.off { opacity: .55; }
+    .tcard b { display: block; font-size: 26px; line-height: 1.2; }
+    .tcard .qrimg { display: block; width: 100%; max-width: 130px; aspect-ratio: 1; margin: 8px auto; image-rendering: pixelated; }
+    .trow { display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+    .trow .btn { padding: 9px 12px; font-size: 13px; }
+    .qrbig { display: block; width: 100%; max-width: 300px; margin: 10px auto; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 12px; }
+    .urlbox { display: flex; gap: 6px; margin-top: 8px; }
+    .urlbox input { flex: 1; min-width: 0; font-size: 12px !important; }
+    #printArea { display: none; }
+    @media print {
+      body { background: #fff; }
+      #root, .mdl, .atoast { display: none !important; }
+      #printArea { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12mm 10mm; padding: 10mm; }
+      .pcard { border: 2px solid #000; border-radius: 6mm; padding: 8mm; text-align: center; page-break-inside: avoid; }
+      .pcard img { width: 60mm; height: 60mm; image-rendering: pixelated; }
+      .pcard h1 { font-size: 34pt; margin-top: 3mm; }
+      .pcard p { font-size: 13pt; margin-top: 2mm; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="printArea"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "tables", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var tables = [], cache = {};
+      var LABEL_RE = /^[0-9A-Za-z_-]{1,10}$/;
+
+      // ----- สร้าง QR เป็นรูป PNG (data URL) -----
+      function hasQr() { return typeof qrcode === "function"; }
+      function qrUrl(label) { return new URL("../?table=" + encodeURIComponent(label), location.href).href; }
+      function qrImg(text, cell) {
+        var key = text + "|" + cell;
+        if (cache[key]) return cache[key];
+        var q = qrcode(0, "M");
+        q.addData(text);
+        q.make();
+        var n = q.getModuleCount(), m = 2, size = (n + 2 * m) * cell;
+        var cv = document.createElement("canvas");
+        cv.width = cv.height = size;
+        var x = cv.getContext("2d");
+        x.fillStyle = "#fff"; x.fillRect(0, 0, size, size);
+        x.fillStyle = "#000";
+        for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) {
+          if (q.isDark(r, k)) x.fillRect((k + m) * cell, (r + m) * cell, cell, cell);
+        }
+        return (cache[key] = cv.toDataURL("image/png"));
+      }
+
+      // ----- โหลดและวาด -----
+      async function load() {
+        var r;
+        try { r = await db.from("tables").select("*"); } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          c.innerHTML = '<div class="panel empty">โหลดข้อมูลไม่สำเร็จ<br><br><button class="btn" onclick="location.reload()">ลองใหม่</button></div>';
+          return;
+        }
+        Admin.setDb(true);
+        tables = r.data.sort(function (a, b) { return a.label.localeCompare(b.label, "th", { numeric: true }); });
+        draw();
+      }
+
+      function card(t) {
+        var img = hasQr() ? '<img class="qrimg" alt="QR โต๊ะ ' + esc(t.label) + '" src="' + qrImg(qrUrl(t.label), 4) + '">' : "";
+        return '<div class="tcard' + (t.active ? "" : " off") + '"><b>โต๊ะ ' + esc(t.label) + "</b>" +
+          '<div class="muted sm">' + t.seats + " ที่นั่ง" + (t.active ? "" : " · ปิดอยู่") + "</div>" + img +
+          '<div class="trow"><label class="sw"><input type="checkbox" data-tg="' + t.id + '"' + (t.active ? " checked" : "") + "><i></i></label>" +
+          '<button class="btn" data-qr="' + t.id + '">QR</button><button class="btn" data-edit="' + t.id + '">แก้ไข</button></div></div>';
+      }
+
+      function draw() {
+        var h = '<div class="bar2"><div class="muted sm">QR ลิงก์มาหน้าแรกพร้อมเลขโต๊ะ ลูกค้าสแกนแล้วไม่ต้องกรอกเอง</div>' +
+          '<div class="tools" style="margin:0"><button class="btn" data-a="print">🖨️ พิมพ์ QR ทุกโต๊ะ</button>' +
+          '<button class="btn" data-a="bulk">+ หลายโต๊ะ</button><button class="btn accent" data-a="add">+ เพิ่มโต๊ะ</button></div></div>';
+        if (!hasQr()) h += '<div class="ferr">โหลดตัวสร้าง QR ไม่สำเร็จ (ตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้า)</div>';
+        h += tables.length ? '<div class="tgrid">' + tables.map(card).join("") + "</div>" : '<div class="panel empty">ยังไม่มีโต๊ะ</div>';
+        c.innerHTML = h;
+      }
+
+      function find(id) { return tables.find(function (t) { return t.id === id; }); }
+
+      c.addEventListener("click", function (e) {
+        var a = e.target.closest("[data-a]");
+        if (a) {
+          var v = a.getAttribute("data-a");
+          if (v === "add") openForm(null); else if (v === "bulk") openBulk(); else printAll();
+          return;
+        }
+        var q = e.target.closest("[data-qr]");
+        if (q) { openQr(find(Number(q.getAttribute("data-qr")))); return; }
+        var ed = e.target.closest("[data-edit]");
+        if (ed) openForm(Number(ed.getAttribute("data-edit")));
+      });
+
+      c.addEventListener("change", async function (e) {
+        var i = e.target.closest("input[data-tg]");
+        if (!i) return;
+        var id = Number(i.getAttribute("data-tg")), val = i.checked, r;
+        try { r = await db.from("tables").update({ active: val }).eq("id", id).select("id"); } catch (x) { r = { error: { message: "x" } }; }
+        if (r.error || !r.data || !r.data.length) { i.checked = !val; Admin.toast("บันทึกไม่สำเร็จ"); return; }
+        find(id).active = val;
+        i.closest(".tcard").classList.toggle("off", !val);
+        Admin.toast(val ? "เปิดโต๊ะแล้ว" : "ปิดโต๊ะแล้ว (ลูกค้าสั่งจากโต๊ะนี้ไม่ได้)");
+      });
+
+      // ----- ดู QR ขนาดใหญ่ -----
+      function openQr(t) {
+        if (!t) return;
+        if (!hasQr()) { Admin.toast("โหลดตัวสร้าง QR ไม่สำเร็จ"); return; }
+        var url = qrUrl(t.label), img = qrImg(url, 10);
+        var ov = Admin.modal(
+          "<h2>QR โต๊ะ " + esc(t.label) + "</h2>" +
+          '<p class="muted sm">กดค้างที่รูป QR เพื่อบันทึกลงเครื่อง หรือกดปุ่มดาวน์โหลด</p>' +
+          '<img class="qrbig" alt="QR โต๊ะ ' + esc(t.label) + '" src="' + img + '">' +
+          '<div class="urlbox"><input id="q_url" readonly value="' + esc(url) + '"><button class="btn" id="q_copy">คัดลอก</button></div>' +
+          '<div class="mact"><button class="btn" id="q_close">ปิด</button>' +
+          '<a class="btn primary" style="text-decoration:none" download="table-' + esc(t.label) + '.png" href="' + img + '">ดาวน์โหลด PNG</a></div>'
+        );
+        ov.querySelector("#q_close").onclick = function () { ov.close(); };
+        ov.querySelector("#q_copy").onclick = async function () {
+          var inp = ov.querySelector("#q_url");
+          try { await navigator.clipboard.writeText(inp.value); }
+          catch (e) { inp.select(); try { document.execCommand("copy"); } catch (x) {} }
+          Admin.toast("คัดลอกลิงก์แล้ว");
+        };
+      }
+
+      // ----- พิมพ์ QR ทุกโต๊ะ (เฉพาะโต๊ะที่เปิด) -----
+      function printAll() {
+        var list = tables.filter(function (t) { return t.active; });
+        if (!list.length) { Admin.toast("ไม่มีโต๊ะที่เปิดใช้งาน"); return; }
+        if (!hasQr()) { Admin.toast("โหลดตัวสร้าง QR ไม่สำเร็จ"); return; }
+        document.getElementById("printArea").innerHTML = list.map(function (t) {
+          return '<div class="pcard"><img alt="" src="' + qrImg(qrUrl(t.label), 10) + '"><h1>โต๊ะ ' + esc(t.label) +
+            "</h1><p>สแกนเพื่อสั่งอาหาร</p></div>";
+        }).join("");
+        setTimeout(function () { window.print(); }, 150);
+      }
+
+      // ----- เพิ่ม/แก้ไขโต๊ะ -----
+      function openForm(id) {
+        var t = id ? find(id) : null;
+        var ov = Admin.modal(
+          "<h2>" + (t ? "แก้ไขโต๊ะ" : "เพิ่มโต๊ะ") + "</h2>" +
+          '<label class="l">หมายเลข/ชื่อโต๊ะ (ตัวเลขหรือภาษาอังกฤษ ไม่เกิน 10 ตัว)</label>' +
+          '<input id="f_label" maxlength="10" autocapitalize="none" value="' + esc(t ? t.label : "") + '">' +
+          (t ? '<div class="muted sm" style="margin-top:6px">ถ้าเปลี่ยนเลขโต๊ะ ต้องพิมพ์ QR ใหม่ QR เก่าจะใช้ไม่ได้</div>' : "") +
+          '<label class="l">จำนวนที่นั่ง</label><input id="f_seats" type="number" min="1" max="99" step="1" inputmode="numeric" value="' + (t ? t.seats : 4) + '">' +
+          '<label class="chk"><input type="checkbox" id="f_av"' + (!t || t.active ? " checked" : "") + "> เปิดใช้งาน</label>" +
+          '<div class="ferr" id="f_err" hidden></div>' +
+          '<div class="mact">' + (t ? '<button class="btn danger" id="f_del">ลบโต๊ะ</button>' : "") +
+          '<button class="btn" id="f_cancel">ยกเลิก</button><button class="btn primary" id="f_save">บันทึก</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("f_err"); e.textContent = m; e.hidden = false; }
+        $("f_cancel").onclick = function () { ov.close(); };
+
+        if ($("f_del")) {
+          $("f_del").onclick = async function () {
+            if (!confirm("ลบโต๊ะ " + t.label + " ใช่หรือไม่?\nQR ของโต๊ะนี้จะใช้สั่งอาหารไม่ได้อีก (ประวัติออเดอร์เก่ายังอยู่ครบ)")) return;
+            var r;
+            try { r = await db.from("tables").delete().eq("id", t.id).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+            if (r.error || !r.data || !r.data.length) { showErr((r.error && r.error.message) || "ลบไม่สำเร็จ"); return; }
+            ov.close(); Admin.toast("ลบแล้ว"); load();
+          };
+        }
+
+        $("f_save").onclick = async function () {
+          var label = $("f_label").value.trim();
+          if (!LABEL_RE.test(label)) { showErr("ชื่อโต๊ะใช้ได้เฉพาะตัวเลข อังกฤษ - และ _ ไม่เกิน 10 ตัว"); return; }
+          var seats = parseInt($("f_seats").value, 10);
+          if (!(seats >= 1 && seats <= 99)) { showErr("จำนวนที่นั่งต้องอยู่ระหว่าง 1-99"); return; }
+          var row = { label: label, seats: seats, active: $("f_av").checked };
+          var btn = $("f_save");
+          btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+          var r;
+          try {
+            r = t ? await db.from("tables").update(row).eq("id", t.id).select("id")
+                  : await db.from("tables").insert(row).select("id");
+          } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data || !r.data.length) {
+            showErr(r.error && r.error.code === "23505" ? "มีโต๊ะหมายเลขนี้อยู่แล้ว" : ((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก"));
+            btn.disabled = false; btn.textContent = "บันทึก";
+            return;
+          }
+          ov.close(); Admin.toast("บันทึกแล้ว"); load();
+        };
+      }
+
+      // ----- เพิ่มหลายโต๊ะพร้อมกัน (เลขต่อเนื่อง) -----
+      function openBulk() {
+        var max = 0;
+        tables.forEach(function (t) { if (/^\d+$/.test(t.label) && Number(t.label) > max) max = Number(t.label); });
+        var ov = Admin.modal(
+          "<h2>เพิ่มหลายโต๊ะ</h2>" +
+          '<label class="l">เริ่มที่เลข</label><input id="b_from" type="number" min="1" max="9999" step="1" inputmode="numeric" value="' + (max + 1) + '">' +
+          '<label class="l">จำนวนโต๊ะ (สูงสุด 50)</label><input id="b_n" type="number" min="1" max="50" step="1" inputmode="numeric" value="5">' +
+          '<label class="l">จำนวนที่นั่งต่อโต๊ะ</label><input id="b_seats" type="number" min="1" max="99" step="1" inputmode="numeric" value="4">' +
+          '<div class="muted sm" style="margin-top:8px">เลขที่มีอยู่แล้วจะถูกข้ามให้อัตโนมัติ</div>' +
+          '<div class="ferr" id="b_err" hidden></div>' +
+          '<div class="mact"><button class="btn" id="b_cancel">ยกเลิก</button><button class="btn primary" id="b_save">เพิ่มโต๊ะ</button></div>'
+        );
+        function $(i) { return ov.querySelector("#" + i); }
+        function showErr(m) { var e = $("b_err"); e.textContent = m; e.hidden = false; }
+        $("b_cancel").onclick = function () { ov.close(); };
+        $("b_save").onclick = async function () {
+          var from = parseInt($("b_from").value, 10), n = parseInt($("b_n").value, 10), seats = parseInt($("b_seats").value, 10);
+          if (!(from >= 1 && from <= 9999)) { showErr("เลขเริ่มต้นไม่ถูกต้อง"); return; }
+          if (!(n >= 1 && n <= 50)) { showErr("จำนวนโต๊ะต้องอยู่ระหว่าง 1-50"); return; }
+          if (!(seats >= 1 && seats <= 99)) { showErr("จำนวนที่นั่งต้องอยู่ระหว่าง 1-99"); return; }
+          var have = {};
+          tables.forEach(function (t) { have[t.label] = true; });
+          var rows = [];
+          for (var i = 0; i < n; i++) {
+            var lab = String(from + i);
+            if (!have[lab]) rows.push({ label: lab, seats: seats, active: true });
+          }
+          if (!rows.length) { showErr("โต๊ะเหล่านี้มีอยู่แล้วทั้งหมด"); return; }
+          var btn = $("b_save");
+          btn.disabled = true; btn.textContent = "กำลังเพิ่ม…";
+          var r;
+          try { r = await db.from("tables").insert(rows).select("id"); } catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+          if (r.error || !r.data) {
+            showErr((r.error && r.error.message) || "ไม่มีสิทธิ์บันทึก");
+            btn.disabled = false; btn.textContent = "เพิ่มโต๊ะ";
+            return;
+          }
+          ov.close(); Admin.toast("เพิ่ม " + rows.length + " โต๊ะแล้ว"); load();
+        };
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>

@@ -14,6 +14,8 @@
     }
     .mth { width: 104px; flex-shrink: 0; filter: drop-shadow(0 8px 8px rgba(0,0,0,.5)); }
     .mth svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .mth img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 50%; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; }
     .mbody { flex: 1; min-width: 0; }
     .mbody h3 { font-size: 17px; font-weight: 600; }
     .mbody p { color: var(--muted); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
@@ -65,6 +67,27 @@
   <script src="js/pizza.js"></script>
   <script src="js/cart.js"></script>
   <script>
+    // ===== ตัวช่วย =====
+    function safeImg(u) { return u && /^https:\/\//.test(u) ? u : null; }
+
+    // แบ่งกลุ่มตามหมวดหมู่ (ลำดับตามหมวด) เมนูที่ไม่มีหมวดไว้ท้ายสุด
+    function groupBy(list, cats) {
+      var groups = [];
+      cats.forEach(function (k) {
+        var items = list.filter(function (p) { return p.category_id === k.id; });
+        if (items.length) groups.push({ name: k.name, items: items });
+      });
+      var rest = list.filter(function (p) { return !p.category_id; });
+      if (rest.length) groups.push({ name: "", items: rest });
+      return groups;
+    }
+    function addHeading(list, g, many) {
+      if (!many || !g.name) return;
+      var h = document.createElement("h4");
+      h.textContent = g.name;
+      list.appendChild(h);
+    }
+
     // ===== แถบล่าง: สรุปตะกร้า =====
     function updateBar() {
       var n = cartCount();
@@ -114,81 +137,97 @@
       draw();
     }
 
-    // ===== วาดรายการพิซซ่า =====
-    function renderPizzas(products) {
+    // ===== การ์ดพิซซ่า =====
+    function addPizzaCard(list, p) {
+      var size = "M";
+      var price = { S: Number(p.price_s), M: Number(p.price_m), L: Number(p.price_l) };
+      var recipe = (p.recipe || []).filter(function (x) { return SH[x[2]]; });
+      var img = safeImg(p.image_url);
+      var card = document.createElement("div");
+      card.className = "mi";
+      card.innerHTML =
+        '<div class="mth">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '<svg viewBox="-160 -160 320 320"></svg>') + "</div>" +
+        '<div class="mbody"><h3>' + esc(p.name) + "</h3><p>" + esc(p.description || "") + "</p>" +
+        '<div class="msz"></div>' +
+        '<div class="mrow"><span class="mprice"></span><div class="ctl"></div></div></div>';
+      list.appendChild(card);
+
+      var pz = null;
+      if (!img) {
+        pz = new Pizza(card.querySelector("svg"));
+        recipe.forEach(function (x) { pz.add({ id: x[0], s: x[2], k: x[3] }); });
+      }
+
+      var szBox = card.querySelector(".msz");
+      var priceEl = card.querySelector(".mprice");
+      var ctl = card.querySelector(".ctl");
+
+      function drawSize() {
+        szBox.innerHTML = "";
+        ["S", "M", "L"].forEach(function (s) {
+          var b = document.createElement("button");
+          b.textContent = s;
+          b.className = s === size ? "on" : "";
+          b.onclick = function () { size = s; drawSize(); ctl.redraw(); };
+          szBox.appendChild(b);
+        });
+        priceEl.textContent = price[size] + " ฿";
+      }
+
+      bindControl(
+        ctl,
+        function () { return "p:" + p.id + ":" + size; },
+        function () {
+          var item = {
+            key: "p:" + p.id + ":" + size, pid: p.id, name: p.name, size: size, sauce: "ซอสแดง",
+            basePrice: price[size],
+            toppings: recipe.map(function (x) { return { id: x[0], name: x[1], price: 0 }; }),
+            unitPrice: price[size]
+          };
+          if (pz) item.look = snapshotLook(pz, "R"); else item.icon = "🍕";
+          return item;
+        }
+      );
+      drawSize();
+    }
+
+    function renderPizzas(products, cats) {
       var list = document.getElementById("pizzaList");
       list.innerHTML = "";
       if (!products.length) { list.innerHTML = '<p class="note">ยังไม่มีพิซซ่าในเมนู</p>'; return; }
-
-      products.forEach(function (p) {
-        var size = "M";
-        var price = { S: Number(p.price_s), M: Number(p.price_m), L: Number(p.price_l) };
-        var recipe = (p.recipe || []).filter(function (x) { return SH[x[2]]; });
-        var card = document.createElement("div");
-        card.className = "mi";
-        card.innerHTML =
-          '<div class="mth"><svg viewBox="-160 -160 320 320"></svg></div>' +
-          '<div class="mbody"><h3>' + esc(p.name) + "</h3><p>" + esc(p.description || "") + "</p>" +
-          '<div class="msz"></div>' +
-          '<div class="mrow"><span class="mprice"></span><div class="ctl"></div></div></div>';
-        list.appendChild(card);
-
-        var pz = new Pizza(card.querySelector("svg"));
-        recipe.forEach(function (x) { pz.add({ id: x[0], s: x[2], k: x[3] }); });
-
-        var szBox = card.querySelector(".msz");
-        var priceEl = card.querySelector(".mprice");
-        var ctl = card.querySelector(".ctl");
-
-        function drawSize() {
-          szBox.innerHTML = "";
-          ["S", "M", "L"].forEach(function (s) {
-            var b = document.createElement("button");
-            b.textContent = s;
-            b.className = s === size ? "on" : "";
-            b.onclick = function () { size = s; drawSize(); ctl.redraw(); };
-            szBox.appendChild(b);
-          });
-          priceEl.textContent = price[size] + " ฿";
-        }
-
-        bindControl(
-          ctl,
-          function () { return "p:" + p.id + ":" + size; },
-          function () {
-            return {
-              key: "p:" + p.id + ":" + size, pid: p.id, name: p.name, size: size, sauce: "ซอสแดง",
-              basePrice: price[size],
-              toppings: recipe.map(function (x) { return { id: x[0], name: x[1], price: 0 }; }),
-              unitPrice: price[size],
-              look: snapshotLook(pz, "R")
-            };
-          }
-        );
-        drawSize();
+      var groups = groupBy(products, cats);
+      groups.forEach(function (g) {
+        addHeading(list, g, groups.length > 1);
+        g.items.forEach(function (p) { addPizzaCard(list, p); });
       });
     }
 
-    // ===== วาดรายการเครื่องดื่ม =====
-    function renderDrinks(drinks) {
+    // ===== การ์ดเครื่องดื่ม =====
+    function addDrinkCard(list, d) {
+      var price = Number(d.price);
+      var img = safeImg(d.image_url);
+      var card = document.createElement("div");
+      card.className = "mi dr";
+      card.innerHTML =
+        '<div class="thumb">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : esc(d.icon || "🥤")) + "</div>" +
+        '<div class="mbody"><h3>' + esc(d.name) + '</h3><span class="mprice">' + price + " ฿</span></div>" +
+        '<div class="ctl"></div>';
+      list.appendChild(card);
+      bindControl(
+        card.querySelector(".ctl"),
+        function () { return "d:" + d.id; },
+        function () { return { key: "d:" + d.id, pid: d.id, name: d.name, icon: d.icon, unitPrice: price }; }
+      );
+    }
+
+    function renderDrinks(drinks, cats) {
       var list = document.getElementById("drinkList");
       list.innerHTML = "";
       if (!drinks.length) { list.innerHTML = '<p class="note">ยังไม่มีเครื่องดื่มในเมนู</p>'; return; }
-
-      drinks.forEach(function (d) {
-        var price = Number(d.price);
-        var card = document.createElement("div");
-        card.className = "mi dr";
-        card.innerHTML =
-          '<div class="thumb">' + esc(d.icon || "🥤") + "</div>" +
-          '<div class="mbody"><h3>' + esc(d.name) + '</h3><span class="mprice">' + price + " ฿</span></div>" +
-          '<div class="ctl"></div>';
-        list.appendChild(card);
-        bindControl(
-          card.querySelector(".ctl"),
-          function () { return "d:" + d.id; },
-          function () { return { key: "d:" + d.id, pid: d.id, name: d.name, icon: d.icon, unitPrice: price }; }
-        );
+      var groups = groupBy(drinks, cats);
+      groups.forEach(function (g) {
+        addHeading(list, g, groups.length > 1);
+        g.items.forEach(function (d) { addDrinkCard(list, d); });
       });
     }
 
@@ -206,17 +245,24 @@
       }
       if (!db) { fail(); return; }
 
-      var r;
+      var r, k;
       try {
         r = await db.from("products")
-          .select("id,kind,name,description,icon,price,price_s,price_m,price_l,recipe,sort_order")
+          .select("id,kind,name,description,icon,image_url,category_id,price,price_s,price_m,price_l,recipe,sort_order")
           .in("kind", ["pizza", "drink"])
           .order("sort_order");
+        k = await db.from("categories").select("id,name,sort_order").order("sort_order");
       } catch (e) { fail(); return; }
-      if (r.error || !r.data) { fail(); return; }
+      if (r.error || !r.data || k.error || !k.data) { fail(); return; }
 
-      renderPizzas(r.data.filter(function (x) { return x.kind === "pizza"; }));
-      renderDrinks(r.data.filter(function (x) { return x.kind === "drink"; }));
+      // ลูกค้าเห็นเฉพาะหมวดที่เปิดอยู่ (ฐานข้อมูลส่งมาให้เฉพาะหมวดที่เปิด)
+      var cats = k.data;
+      var activeIds = {};
+      cats.forEach(function (x) { activeIds[x.id] = true; });
+      var visible = r.data.filter(function (p) { return !p.category_id || activeIds[p.category_id]; });
+
+      renderPizzas(visible.filter(function (x) { return x.kind === "pizza"; }), cats);
+      renderDrinks(visible.filter(function (x) { return x.kind === "drink"; }), cats);
     }
 
     // ===== แท็บ พิซซ่า / เครื่องดื่ม =====

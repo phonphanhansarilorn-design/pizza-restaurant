@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>แอดมิน · รายงานยอดขาย</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+  <style>
+    .chartwrap { overflow-x: auto; }
+    .chartwrap .bar span { font-size: 11px; }
+    .chartwrap .bar em { font-size: 11px; }
+    .dates { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+    .dates input { padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; font: 500 14px "Prompt"; }
+    .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
+    .stats3 .stat b { font-size: 24px; }
+    @media (max-width: 820px) { .stats3 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script src="../js/admin.js"></script>
+  <script>
+    Admin.init({ section: "admin", side: "reports", roles: ["admin"] }).then(function (ok) {
+      if (!ok) return;
+      var c = document.getElementById("content");
+      var range = "7d", group = "day", cFrom = "", cTo = "", reqId = 0, last = null;
+      var RANGES = [["today", "วันนี้"], ["7d", "7 วัน"], ["30d", "30 วัน"], ["month", "เดือนนี้"], ["last", "เดือนที่แล้ว"], ["year", "ปีนี้"], ["custom", "กำหนดเอง"]];
+
+      // ----- วันที่ตามเวลาไทย (ทำงานด้วย UTC เพื่อไม่ให้เพี้ยน) -----
+      function pad(n) { return n < 10 ? "0" + n : "" + n; }
+      function ymd(d) { return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()); }
+      function today() {
+        var n = new Date(Date.now() + 7 * 3600e3);
+        return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+      }
+      function addD(d, n) { return new Date(d.getTime() + n * 86400e3); }
+      function mStart(y, m) { return new Date(Date.UTC(y, m, 1)); }
+
+      // คำนวณช่วงวันที่จากตัวเลือก
+      function calc() {
+        var t = today(), f = t, e = t;
+        if (range === "7d") f = addD(t, -6);
+        else if (range === "30d") f = addD(t, -29);
+        else if (range === "month") f = mStart(t.getUTCFullYear(), t.getUTCMonth());
+        else if (range === "last") {
+          f = mStart(t.getUTCFullYear(), t.getUTCMonth() - 1);
+          e = addD(mStart(t.getUTCFullYear(), t.getUTCMonth()), -1);
+        } else if (range === "year") f = mStart(t.getUTCFullYear(), 0);
+        else if (range === "custom") {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(cFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(cTo)) return null;
+          f = new Date(cFrom + "T00:00:00Z"); e = new Date(cTo + "T00:00:00Z");
+        }
+        return { f: f, e: e };
+      }
+
+      function fill(series, f, e, g) {
+        var map = {};
+        series.forEach(function (s) { map[s.k] = s; });
+        var out = [], d, k;
+        if (g === "day") {
+          for (d = new Date(f.getTime()); d <= e; d = addD(d, 1)) {
+            k = ymd(d);
+            out.push({ k: k, sales: map[k] ? Number(map[k].sales) : 0, orders: map[k] ? Number(map[k].orders) : 0 });
+          }
+        } else {
+          for (d = mStart(f.getUTCFullYear(), f.getUTCMonth()); d <= e; d = mStart(d.getUTCFullYear(), d.getUTCMonth() + 1)) {
+            k = ymd(d).slice(0, 7);
+            out.push({ k: k, sales: map[k] ? Number(map[k].sales) : 0, orders: map[k] ? Number(map[k].orders) : 0 });
+          }
+        }
+        return out;
+      }
+      function shortLab(k, g, n) {
+        if (g === "month") return new Date(k + "-01T12:00:00Z").toLocaleDateString("th-TH", { month: "short", timeZone: "UTC" });
+        var d = new Date(k + "T12:00:00Z");
+        return n <= 10 ? d.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", timeZone: "UTC" }) : String(d.getUTCDate());
+      }
+      function longLab(k, g) {
+        if (g === "month") return new Date(k + "-01T12:00:00Z").toLocaleDateString("th-TH", { month: "long", year: "numeric", timeZone: "UTC" });
+        return new Date(k + "T12:00:00Z").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+      }
+
+      // ----- โครงหน้า (ตัวเลือกคงที่ ผลรายงานอัปเดตเฉพาะส่วนล่าง) -----
+      c.innerHTML = '<div class="tools" id="rng"></div><div class="dates" id="cust" hidden>' +
+        '<input type="date" id="d_from"><span>ถึง</span><input type="date" id="d_to"><button class="btn primary" id="d_go">ดูรายงาน</button></div>' +
+        '<div class="tools" id="grp"></div><div id="out"><div class="panel empty">กำลังโหลด…</div></div>';
+
+      function drawTools() {
+        document.getElementById("rng").innerHTML = RANGES.map(function (r) {
+          return '<button class="chip' + (range === r[0] ? " on" : "") + '" data-r="' + r[0] + '">' + r[1] + "</button>";
+        }).join("");
+        document.getElementById("grp").innerHTML =
+          '<span class="muted sm">ดูแบบ</span><button class="chip' + (group === "day" ? " on" : "") + '" data-g="day">รายวัน</button>' +
+          '<button class="chip' + (group === "month" ? " on" : "") + '" data-g="month">รายเดือน</button>';
+        document.getElementById("cust").hidden = range !== "custom";
+      }
+
+      c.addEventListener("click", function (e) {
+        var r = e.target.closest("[data-r]");
+        if (r) {
+          range = r.getAttribute("data-r");
+          if (range !== "custom") group = range === "year" ? "month" : "day";
+          drawTools();
+          if (range !== "custom") load();
+          return;
+        }
+        var g = e.target.closest("[data-g]");
+        if (g) { group = g.getAttribute("data-g"); drawTools(); load(); return; }
+        if (e.target.id === "d_go") {
+          cFrom = document.getElementById("d_from").value;
+          cTo = document.getElementById("d_to").value;
+          load();
+          return;
+        }
+        if (e.target.id === "csv") exportCsv();
+      });
+
+      // ----- โหลดรายงาน -----
+      async function load() {
+        var out = document.getElementById("out");
+        var rg = calc();
+        if (!rg) { out.innerHTML = '<div class="panel empty">เลือกวันที่เริ่มต้นและสิ้นสุด แล้วกด "ดูรายงาน"</div>'; return; }
+        if (rg.e < rg.f) { out.innerHTML = '<div class="panel empty">วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น</div>'; return; }
+        var days = Math.round((rg.e - rg.f) / 86400e3) + 1;
+        if (days > 800) { out.innerHTML = '<div class="panel empty">เลือกช่วงได้ไม่เกิน 800 วัน</div>'; return; }
+        var g = group;
+        if (g === "day" && days > 92) g = "month";   // ช่วงยาว แสดงเป็นรายเดือนอัตโนมัติ
+
+        var my = ++reqId;
+        out.innerHTML = '<div class="panel empty">กำลังโหลด…</div>';
+        var r;
+        try { r = await db.rpc("sales_report", { p_from: ymd(rg.f), p_to: ymd(rg.e), p_group: g }); }
+        catch (x) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+        if (my !== reqId) return;   // มีการเลือกช่วงใหม่แล้ว ทิ้งผลเก่า
+
+        if (r.error || !r.data) {
+          Admin.setDb(false);
+          var m = (r.error && r.error.message) || "";
+          out.innerHTML = '<div class="panel empty">โหลดรายงานไม่สำเร็จ<br><small>' + esc(m) + "</small>" +
+            (/function|schema cache/i.test(m) ? "<br><small>ยังไม่ได้รัน SQL ส่วนที่ 6 หรือไม่</small>" : "") + "</div>";
+          return;
+        }
+        Admin.setDb(true);
+        draw(r.data, rg, g);
+      }
+
+      function draw(d, rg, g) {
+        var s = d.summary, series = fill(d.series || [], rg.f, rg.e, g);
+        last = { series: series, g: g };
+        var orders = Number(s.orders), sales = Number(s.sales);
+        var avg = orders ? sales / orders : 0;
+        var h = '<div class="muted sm" style="margin-bottom:10px">ช่วง ' + longLab(ymd(rg.f), "day") + " – " + longLab(ymd(rg.e), "day") +
+          " · ออเดอร์ที่ยกเลิกไม่นับเป็นยอดขาย</div>" +
+          '<div class="stats"><div class="stat"><span>ยอดขาย</span><b>' + baht(sales) + "</b></div>" +
+          '<div class="stat"><span>จำนวนออเดอร์</span><b>' + orders + "</b></div>" +
+          '<div class="stat"><span>เฉลี่ยต่อออเดอร์</span><b>' + baht(avg) + "</b></div>" +
+          '<div class="stat"><span>ยกเลิก</span><b>' + Number(s.cancelled) + "</b></div></div>" +
+          '<div class="stats3"><div class="stat"><span>💵 เงินสด</span><b>' + baht(s.cash) + "</b></div>" +
+          '<div class="stat"><span>📱 สแกนจ่าย</span><b>' + baht(s.qr) + "</b></div>" +
+          '<div class="stat"><span>⏳ ยังไม่ได้รับเงิน</span><b>' + baht(s.unpaid) + "</b></div></div>";
+
+        // กราฟแท่ง
+        var max = 0, hi = -1;
+        series.forEach(function (x, i) { if (x.sales > max) { max = x.sales; hi = i; } });
+        h += '<div class="panel"><h2>ยอดขาย' + (g === "month" ? "รายเดือน" : "รายวัน") + '</h2><div class="chartwrap">' +
+          '<div class="bars" style="min-width:' + Math.max(100, series.length * 34) + 'px">';
+        series.forEach(function (x, i) {
+          var pct = max > 0 ? Math.max(2, Math.round(x.sales / max * 100)) : 2;
+          h += '<div class="bar' + (i === hi ? " today" : "") + '"><em>' + (x.sales > 0 ? Math.round(x.sales).toLocaleString("en-US") : "") +
+            '</em><i style="height:' + pct + '%"></i><span>' + shortLab(x.k, g, series.length) + "</span></div>";
+        });
+        h += "</div></div></div>";
+
+        // เมนูขายดี
+        h += '<div class="panel"><h2>เมนูขายดี 10 อันดับ</h2>';
+        if (!d.best || !d.best.length) h += '<div class="empty">ยังไม่มีข้อมูล</div>';
+        else d.best.forEach(function (b, i) {
+          h += '<div class="rowx"><span>' + (i + 1) + ". " + esc(b.name) + "</span><b>" + Number(b.qty) + " ชิ้น · " + baht(b.sales) + "</b></div>";
+        });
+        h += "</div>";
+
+        // ตารางรายวัน/รายเดือน
+        h += '<div class="panel"><div class="bar2" style="margin:0 0 8px"><h2 style="margin:0">รายละเอียด</h2>' +
+          '<button class="btn" id="csv">⬇ ดาวน์โหลด CSV</button></div>';
+        series.slice().reverse().forEach(function (x) {
+          h += '<div class="rowx"><span>' + longLab(x.k, g) + '</span><span class="muted">' + x.orders + " ออเดอร์</span><b>" + baht(x.sales) + "</b></div>";
+        });
+        document.getElementById("out").innerHTML = h + "</div>";
+      }
+
+      // ----- ดาวน์โหลด CSV (เปิดใน Excel ภาษาไทยได้) -----
+      function exportCsv() {
+        if (!last) return;
+        var lines = [(last.g === "month" ? "เดือน" : "วันที่") + ",จำนวนออเดอร์,ยอดขาย"];
+        last.series.forEach(function (x) { lines.push(x.k + "," + x.orders + "," + x.sales); });
+        var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "sales-report.csv";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      }
+
+      drawTools();
+      load();
+      Admin.live(function () { if (range === "today" || range === "7d") load(); });
+    });
+  </script>
+</body>
+</html>

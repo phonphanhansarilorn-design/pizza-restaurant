@@ -190,6 +190,87 @@ Admin.removeImage = async function (url) {
   try { await db.storage.from("menu-images").remove([decodeURIComponent(m[1])]); } catch (e) {}
 };
 
+// ----- จำลองออเดอร์ (เปิด/ปิด) และล้างข้อมูลจำลอง (เฉพาะผู้ดูแลระบบ) -----
+Admin.initSim = function () {
+  var btn = document.getElementById("simBtn");
+  var clr = document.getElementById("simClr");
+  if (!btn || !clr) return;
+  var timer = null, busy = false, cnt = 0;
+
+  function on() { return store("simOn") === "1"; }
+  function draw() {
+    btn.textContent = "จำลองออเดอร์: " + (on() ? "เปิด" : "ปิด");
+    btn.classList.toggle("on", on());
+    clr.textContent = "ล้างข้อมูลจำลอง" + (cnt ? " (" + cnt + ")" : "");
+  }
+  async function count() {
+    var r;
+    try { r = await db.from("orders").select("id", { count: "exact", head: true }).eq("is_sim", true); } catch (e) { return; }
+    if (r.error) return;
+    cnt = r.count || 0;
+    draw();
+  }
+  function stop() { clearInterval(timer); timer = null; }
+  function start() { stop(); timer = setInterval(tick, 8000); }
+
+  async function tick() {
+    if (busy || !on()) return;
+    busy = true;
+    var r;
+    try { r = await db.rpc("sim_tick"); } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+    busy = false;
+    if (r.error) {
+      var m = r.error.message || "";
+      if (/function|schema cache|is_sim|column/i.test(m)) {
+        store("simOn", "0");
+        stop();
+        draw();
+        Admin.toast("ยังไม่ได้รัน SQL ส่วนที่ 9 (ดูวิธีในชุดที่ 11)");
+      }
+      return;   // เน็ตหลุดชั่วคราว ลองใหม่รอบถัดไป
+    }
+    if (r.data && r.data.created) count();
+  }
+
+  btn.onclick = function () {
+    if (on()) {
+      store("simOn", "0");
+      stop();
+      draw();
+      Admin.toast("ปิดจำลองออเดอร์แล้ว");
+      return;
+    }
+    if (!confirm("เปิดจำลองออเดอร์?\n\nจะมีออเดอร์ทดลองเข้ามาเอง และวิ่งผ่านสถานะจนเสร็จ ขณะที่เปิดหน้าหลังบ้านไว้\nข้อมูลจำลองนับรวมในภาพรวมและรายงานด้วย (ลบได้ด้วยปุ่ม \"ล้างข้อมูลจำลอง\")")) return;
+    store("simOn", "1");
+    draw();
+    start();
+    tick();
+    Admin.toast("เปิดจำลองออเดอร์แล้ว");
+  };
+
+  clr.onclick = async function () {
+    if (!confirm("ลบออเดอร์จำลองทั้งหมด" + (cnt ? " (" + cnt + " รายการ)" : "") + " ใช่หรือไม่?\nออเดอร์จริงจะไม่ถูกลบ")) return;
+    store("simOn", "0");
+    stop();
+    draw();
+    var r;
+    try { r = await db.rpc("clear_sim"); } catch (e) { r = { error: { message: "เชื่อมต่อไม่ได้" } }; }
+    if (r.error) {
+      var m = r.error.message || "";
+      Admin.toast(/function|schema cache/i.test(m) ? "ยังไม่ได้รัน SQL ส่วนที่ 9 (ดูวิธีในชุดที่ 11)" : m);
+      return;
+    }
+    Admin.toast("ลบออเดอร์จำลอง " + (r.data || 0) + " รายการแล้ว");
+    cnt = 0;
+    draw();
+    setTimeout(function () { location.reload(); }, 900);
+  };
+
+  draw();
+  count();
+  if (on()) { start(); setTimeout(tick, 2000); }
+};
+
 // ----- สร้างโครงหน้าหลังบ้าน แล้วคืนค่า true เมื่อพร้อม -----
 // opt: { section: "admin" | "kitchen" | "pos", side: "dashboard", roles: ["admin"], title: "..." }
 Admin.init = async function (opt) {
@@ -242,6 +323,11 @@ Admin.init = async function (opt) {
     else navHtml += '<a class="pill" href="#" data-soon="1">' + n.t + "</a>";
   });
 
+  // ปุ่มจำลองออเดอร์ (เฉพาะผู้ดูแลระบบ)
+  var simHtml = role === "admin"
+    ? '<button class="pill" id="simBtn"></button><button class="pill" id="simClr"></button>'
+    : "";
+
   // เมนูซ้าย
   var sideHtml = "";
   if (opt.side) {
@@ -259,7 +345,7 @@ Admin.init = async function (opt) {
   root.innerHTML =
     '<header class="top">' +
       '<div class="brand"><div class="logo">🍕</div><div><b>Pizza House</b><small id="dbState">ฐานข้อมูล: กำลังตรวจสอบ</small></div></div>' +
-      '<nav class="nav">' + navHtml +
+      '<nav class="nav">' + navHtml + simHtml +
         '<button class="pill" id="soundBtn"></button>' +
         '<button class="pill" id="logoutBtn">ออกจากระบบ</button>' +
       "</nav>" +
@@ -308,6 +394,8 @@ Admin.init = async function (opt) {
   db.auth.onAuthStateChange(function (ev) {
     if (ev === "SIGNED_OUT") location.replace("login.html");
   });
+
+  if (role === "admin") Admin.initSim();
 
   return true;
 };

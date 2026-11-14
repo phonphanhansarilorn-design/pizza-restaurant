@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,700&family=Prompt:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <style>
+    .screen.home { padding-bottom: 96px; }
+
     /* ===== หน้าโลโก้ตอนเปิดเว็บ ===== */
     #splash {
       position: fixed; inset: 0; z-index: 200;
@@ -146,7 +148,10 @@
     <a class="ghost" href="menu.html">ดูเมนู</a>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="js/supabase.js"></script>
   <script src="js/pizza.js"></script>
+  <script src="js/cart.js"></script>
   <script>
     // วาดพิซซ่ามาร์เกอริตาบนหน้าแรก
     var home = new Pizza(document.getElementById("homeSvg"));

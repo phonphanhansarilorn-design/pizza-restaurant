@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>เข้าสู่ระบบหลังบ้าน</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../css/admin.css">
+</head>
+<body>
+  <div class="lg">
+    <div class="lgcard">
+      <div class="logo">🍕</div>
+      <h1>Pizza House</h1>
+      <p class="s">เข้าสู่ระบบหลังบ้าน</p>
+
+      <form id="f" autocomplete="on">
+        <label for="em">อีเมล</label>
+        <input id="em" type="email" autocomplete="username" required placeholder="you@example.com">
+        <label for="pw">รหัสผ่าน</label>
+        <input id="pw" type="password" autocomplete="current-password" required>
+        <div class="err" id="err" hidden></div>
+        <button class="btn primary" id="go" type="submit">เข้าสู่ระบบ</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="../js/supabase.js"></script>
+  <script>
+    var HOME = { admin: "dashboard.html", cashier: "orders.html", kitchen: "kitchen.html" };
+    var errEl = document.getElementById("err");
+    function showErr(m) { errEl.textContent = m; errEl.hidden = false; }
+
+    // ตรวจสิทธิ์แล้วพาไปหน้าแรกของตำแหน่งนั้น (ถ้าไม่มีสิทธิ์ ออกจากระบบ)
+    async function goHome(uid) {
+      var p = await db.from("profiles").select("role,active").eq("id", uid).maybeSingle();
+      if (p.data && p.data.active && HOME[p.data.role]) {
+        location.replace(HOME[p.data.role]);
+        return true;
+      }
+      await db.auth.signOut();
+      return false;
+    }
+
+    (async function () {
+      if (!db) { showErr("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้า"); return; }
+      if (new URLSearchParams(location.search).get("e") === "noaccess") {
+        showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน กรุณาติดต่อผู้ดูแลระบบ");
+      }
+      try {
+        var s = await db.auth.getSession();
+        if (s.data && s.data.session) {
+          if (!(await goHome(s.data.session.user.id))) {
+            showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน กรุณาติดต่อผู้ดูแลระบบ");
+          }
+        }
+      } catch (e) {}
+    })();
+
+    document.getElementById("f").onsubmit = async function (e) {
+      e.preventDefault();
+      errEl.hidden = true;
+      if (!db) { showErr("เชื่อมต่อระบบไม่ได้ ลองรีเฟรชหน้า"); return; }
+      var btn = document.getElementById("go");
+      btn.disabled = true;
+      btn.textContent = "กำลังเข้าสู่ระบบ…";
+
+      var r;
+      try {
+        r = await db.auth.signInWithPassword({
+          email: document.getElementById("em").value.trim(),
+          password: document.getElementById("pw").value
+        });
+      } catch (x) {
+        r = { error: { message: "network" } };
+      }
+
+      if (r.error || !r.data || !r.data.user) {
+        var m = (r.error && r.error.message) || "";
+        showErr(/invalid/i.test(m) ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
+          : /rate|too many/i.test(m) ? "ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่"
+          : "เข้าสู่ระบบไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+        btn.disabled = false;
+        btn.textContent = "เข้าสู่ระบบ";
+        return;
+      }
+      if (!(await goHome(r.data.user.id))) {
+        showErr("บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหลังบ้าน กรุณาติดต่อผู้ดูแลระบบ");
+        btn.disabled = false;
+        btn.textContent = "เข้าสู่ระบบ";
+      }
+    };
+  </script>
+</body>
+</html>

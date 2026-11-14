@@ -30,8 +30,8 @@ Admin.HOME = { admin: "dashboard.html", cashier: "orders.html", kitchen: "kitche
 // เมนูซ้าย (ready:false = ยังไม่เปิดใช้ จะแสดงป้าย "เร็ว ๆ นี้")
 Admin.SIDE = [
   { k: "dashboard", t: "ภาพรวม", href: "dashboard.html", roles: ["admin"], ready: true },
-  { k: "products", t: "จัดการเมนู", href: "products.html", roles: ["admin"], ready: false },
-  { k: "categories", t: "หมวดหมู่", href: "categories.html", roles: ["admin"], ready: false },
+  { k: "products", t: "จัดการเมนู", href: "products.html", roles: ["admin"], ready: true },
+  { k: "categories", t: "หมวดหมู่", href: "categories.html", roles: ["admin"], ready: true },
   { k: "orders", t: "ออเดอร์", href: "orders.html", roles: ["admin", "cashier"], ready: true },
   { k: "stock", t: "วัตถุดิบ/สต็อก", href: "stock.html", roles: ["admin"], ready: false },
   { k: "staff", t: "พนักงาน", href: "staff.html", roles: ["admin"], ready: false },
@@ -129,6 +129,65 @@ Admin.updateOrder = async function (id, patch) {
     return false;
   }
   return true;
+};
+
+// ----- หน้าต่างป๊อปอัป (ปิดด้วย ov.close()) -----
+Admin.modal = function (html) {
+  var ov = document.createElement("div");
+  ov.className = "mdl";
+  ov.innerHTML = '<div class="mbox">' + html + "</div>";
+  document.body.appendChild(ov);
+  document.body.style.overflow = "hidden";
+  ov.close = function () {
+    ov.remove();
+    document.body.style.overflow = "";
+  };
+  return ov;
+};
+
+// ----- รูปภาพ: ย่อรูปก่อนอัปโหลด (ไม่เกิน 800 พิกเซล) -----
+Admin.imageToBlob = function (file, max) {
+  max = max || 800;
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var w = img.naturalWidth, h = img.naturalHeight;
+      var k = Math.min(1, max / Math.max(w, h));
+      var cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.round(w * k));
+      cv.height = Math.max(1, Math.round(h * k));
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(function (b) {
+        if (b && b.type === "image/webp") { resolve(b); return; }
+        cv.toBlob(function (j) {
+          if (j) resolve(j); else reject(new Error("แปลงรูปไม่สำเร็จ"));
+        }, "image/jpeg", 0.85);
+      }, "image/webp", 0.85);
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      reject(new Error("เปิดรูปไม่ได้ (ไฟล์เสียหรือไม่ใช่รูปภาพ)"));
+    };
+    img.src = url;
+  });
+};
+
+// อัปโหลดรูปไปที่ Supabase Storage แล้วคืนลิงก์รูป
+Admin.uploadImage = async function (file, folder) {
+  var blob = await Admin.imageToBlob(file, 800);
+  var ext = blob.type === "image/webp" ? "webp" : "jpg";
+  var path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + "." + ext;
+  var r = await db.storage.from("menu-images").upload(path, blob, { contentType: blob.type, cacheControl: "31536000" });
+  if (r.error) throw new Error(r.error.message);
+  return db.storage.from("menu-images").getPublicUrl(path).data.publicUrl;
+};
+
+// ลบรูปเก่าออกจากที่เก็บ (ทำเต็มที่ ไม่แจ้งเตือนถ้าลบไม่ได้)
+Admin.removeImage = async function (url) {
+  var m = String(url || "").match(/\/menu-images\/(.+)$/);
+  if (!m) return;
+  try { await db.storage.from("menu-images").remove([decodeURIComponent(m[1])]); } catch (e) {}
 };
 
 // ----- สร้างโครงหน้าหลังบ้าน แล้วคืนค่า true เมื่อพร้อม -----

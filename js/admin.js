@@ -64,7 +64,7 @@ Admin.toast = function (msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(_tt);
-  _tt = setTimeout(function () { t.classList.remove("show"); }, 2600);
+  _tt = setTimeout(function () { t.classList.remove("show"); }, 3200);
 };
 
 // ----- เสียงแจ้งเตือน -----
@@ -145,6 +145,31 @@ Admin.modal = function (html) {
   return ov;
 };
 
+// ----- กล่องยืนยันที่วาดเองในหน้าเว็บ (ไม่ถูกเบราว์เซอร์บล็อกเหมือน confirm ของระบบ) -----
+// ใช้: if (await Admin.confirm("ข้อความ", "ปุ่มตกลง")) { ... }
+Admin.confirm = function (msg, okText) {
+  return new Promise(function (resolve) {
+    var ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:300;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:20px";
+    ov.innerHTML =
+      '<div style="width:100%;max-width:420px;background:#fff;border-radius:22px;padding:22px">' +
+        '<div data-m="1" style="white-space:pre-line;font-size:15px;line-height:1.65"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">' +
+          '<button class="btn" data-n="1">ยกเลิก</button><button class="btn primary" data-y="1"></button>' +
+        "</div>" +
+      "</div>";
+    ov.querySelector("[data-m]").textContent = msg;
+    ov.querySelector("[data-y]").textContent = okText || "ตกลง";
+    function done(v) { ov.remove(); resolve(v); }
+    ov.onclick = function (e) {
+      if (e.target === ov) done(false);
+      else if (e.target.closest("[data-y]")) done(true);
+      else if (e.target.closest("[data-n]")) done(false);
+    };
+    document.body.appendChild(ov);
+  });
+};
+
 // ----- รูปภาพ: ย่อรูปก่อนอัปโหลด (ไม่เกิน 800 พิกเซล) -----
 Admin.imageToBlob = function (file, max) {
   max = max || 800;
@@ -195,7 +220,7 @@ Admin.initSim = function () {
   var btn = document.getElementById("simBtn");
   var clr = document.getElementById("simClr");
   if (!btn || !clr) return;
-  var timer = null, busy = false, cnt = 0;
+  var timer = null, busy = false, cnt = 0, warned = false;
 
   function on() { return store("simOn") === "1"; }
   function draw() {
@@ -226,13 +251,17 @@ Admin.initSim = function () {
         stop();
         draw();
         Admin.toast("ยังไม่ได้รัน SQL ส่วนที่ 9 (ดูวิธีในชุดที่ 11)");
+      } else if (!warned) {
+        warned = true;   // แจ้งครั้งเดียว ไม่ให้เด้งซ้ำทุกรอบ
+        Admin.toast("จำลองออเดอร์มีปัญหา: " + m);
       }
-      return;   // เน็ตหลุดชั่วคราว ลองใหม่รอบถัดไป
+      return;
     }
+    warned = false;
     if (r.data && r.data.created) count();
   }
 
-  btn.onclick = function () {
+  btn.onclick = async function () {
     if (on()) {
       store("simOn", "0");
       stop();
@@ -240,16 +269,24 @@ Admin.initSim = function () {
       Admin.toast("ปิดจำลองออเดอร์แล้ว");
       return;
     }
-    if (!confirm("เปิดจำลองออเดอร์?\n\nจะมีออเดอร์ทดลองเข้ามาเอง และวิ่งผ่านสถานะจนเสร็จ ขณะที่เปิดหน้าหลังบ้านไว้\nข้อมูลจำลองนับรวมในภาพรวมและรายงานด้วย (ลบได้ด้วยปุ่ม \"ล้างข้อมูลจำลอง\")")) return;
+    var yes = await Admin.confirm(
+      "เปิดจำลองออเดอร์?\n\nจะมีออเดอร์ทดลองเข้ามาเอง และวิ่งผ่านสถานะจนเสร็จ ขณะที่เปิดหน้าหลังบ้านไว้\nข้อมูลจำลองนับรวมในภาพรวมและรายงานด้วย (ลบได้ด้วยปุ่ม \"ล้างข้อมูลจำลอง\")",
+      "เปิดจำลอง"
+    );
+    if (!yes) return;
     store("simOn", "1");
     draw();
     start();
+    Admin.toast("เปิดจำลองออเดอร์แล้ว ออเดอร์จะเข้ามาภายในไม่กี่วินาที");
     tick();
-    Admin.toast("เปิดจำลองออเดอร์แล้ว");
   };
 
   clr.onclick = async function () {
-    if (!confirm("ลบออเดอร์จำลองทั้งหมด" + (cnt ? " (" + cnt + " รายการ)" : "") + " ใช่หรือไม่?\nออเดอร์จริงจะไม่ถูกลบ")) return;
+    var yes = await Admin.confirm(
+      "ลบออเดอร์จำลองทั้งหมด" + (cnt ? " (" + cnt + " รายการ)" : "") + " ใช่หรือไม่?\nออเดอร์จริงจะไม่ถูกลบ",
+      "ลบเลย"
+    );
+    if (!yes) return;
     store("simOn", "0");
     stop();
     draw();

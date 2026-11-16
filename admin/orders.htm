@@ -51,10 +51,12 @@
           (tops ? '<div class="muted sm">' + tops + "</div>" : "") + "</div>";
       }
 
+      function tblName(v) { return v === "TA" ? "กลับบ้าน" : "โต๊ะ " + esc(v); }
+
       function card(o) {
         var nx = NEXT[o.status];
         var payTxt = o.payment_method === "qr" ? "สแกนจ่าย" : "เงินสด";
-        var h = '<div class="oc"><div class="oc-h"><div><h3>#' + o.id + " · โต๊ะ " + esc(o.table_label) + "</h3>" +
+        var h = '<div class="oc"><div class="oc-h"><div><h3>#' + o.id + " · " + tblName(o.table_label) + "</h3>" +
           '<div class="meta">' + Admin.fmtDT(o.created_at) + "</div></div>" +
           '<div class="tags"><span class="badge st-' + o.status + '">' + Admin.STATUS[o.status] + "</span>" +
           '<span class="badge pay-' + o.payment_status + '">' + payTxt + " · " +
